@@ -34,10 +34,10 @@ if [ "$SKIP_BUILD" != 1 ]; then
         fi
     fi
     export PATH="$JAVA_HOME/bin:$PATH"
-    echo "==> 构建（JAVA_HOME=$JAVA_HOME）"
+    echo "==> 构建 JAVA_HOME=${JAVA_HOME}"
     mvn -B -q clean package -DskipTests
 fi
-[ -f "$JAR" ] || { echo "!! 缺少 $JAR，请先构建" >&2; exit 1; }
+[ -f "$JAR" ] || { echo "!! 缺少 ${JAR} 请先构建" >&2; exit 1; }
 
 # ---- 2) 构建信息（随版本入库，方便追溯线上到底跑的哪个提交） -----------------
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo no-git)

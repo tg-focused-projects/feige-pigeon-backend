@@ -5,7 +5,7 @@
 # 流程：收包入库 -> 记录上一版本 -> 切 current 符号链接 -> 重启服务
 #       -> 健康检查（约90s）-> 失败自动回滚上一版本并重启
 # ============================================================================
-set -uo pipefail
+set -euo pipefail
 
 UPLOADED_JAR=$1
 BUILD_INFO=${2:-unknown}
@@ -34,7 +34,9 @@ deployed_at=$(date '+%F %T')" > "$REL_DIR/RELEASE_INFO"
 cat "$REL_DIR/RELEASE_INFO"
 
 echo "==> [2/5] 切换符号链接（prev=${PREV_TARGET:-<无>}）"
-ln -sfn "$REL_DIR" "$CUR_LINK"
+# current 链接可能由 root 创建（init-server），统一用 sudo 保证可切换
+sudo ln -sfn "$REL_DIR" "$CUR_LINK"
+sudo chown -h "$(id -un)":"$(id -gn)" "$CUR_LINK" 2>/dev/null || true
 
 echo "==> [3/5] 重启服务"
 sudo systemctl restart "$APP_NAME.service" || true
@@ -43,7 +45,8 @@ echo "==> [4/5] 健康检查 $HEALTH_URL"
 OK=0
 for i in $(seq 1 30); do
     sleep 3
-    CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "$HEALTH_URL" 2>/dev/null || echo 000)
+    CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "$HEALTH_URL" 2>/dev/null)
+    [ -n "$CODE" ] || CODE=000
     if [ "$CODE" = "200" ]; then OK=1; break; fi
     printf '    [%02d/30] http=%s\n' "$i" "$CODE"
 done
@@ -63,12 +66,12 @@ sudo journalctl -u "$APP_NAME.service" -n 60 --no-pager 2>/dev/null | tail -40
 
 if [ -n "$PREV_TARGET" ] && [ -d "$PREV_TARGET" ] && [ "$PREV_TARGET" != "$REL_DIR" ]; then
     echo "==> 自动回滚到上一版本 $PREV_TARGET"
-    ln -sfn "$PREV_TARGET" "$CUR_LINK"
+    sudo ln -sfn "$PREV_TARGET" "$CUR_LINK"
     sudo systemctl restart "$APP_NAME.service" || true
     for i in $(seq 1 20); do
         sleep 3
-        CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "$HEALTH_URL" 2>/dev/null || echo 000)
-        [ "$CODE" = "200" ] && { echo "✔ 回滚成功，服务已恢复"; exit 2; }
+        CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "$HEALTH_URL" 2>/dev/null)
+        [ "${CODE:-000}" = "200" ] && { echo "✔ 回滚成功，服务已恢复"; exit 2; }
     done
     die "回滚后仍不健康(http=$CODE)，请登录服务器排查"
 else
