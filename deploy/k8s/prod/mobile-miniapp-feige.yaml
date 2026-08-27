@@ -1,0 +1,96 @@
+# =============================================================================
+# 飞鸽传书小程序后端 · 生产环境 TKE 部署清单
+# 适配集群版本: apiVersion apps/v1beta2 (k8s <=1.15, 与 mobile-miniapp-tool 同款规范)
+# 部署方式: 腾讯云控制台 -> TKE 上海集群 -> 工作负载 -> 新建 -> 编辑YAML 整段粘贴
+# 上线换镜像: 只更新下方 image 的 tag 后保存(滚动更新)
+# ⚠️ replicas 必须为 1: 应用内 Quartz 使用 RAMJobStore 无分布式锁,
+#    多副本会导致定时任务重复执行; 扩副本前需先改造调度。
+# =============================================================================
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  annotations:
+    description: 飞鸽传书微信小程序后端(SpringBoot单jar, 内置Quartz定时任务)
+  labels:
+    k8s-app: mobile-miniapp-feige
+    qcloud-app: mobile-miniapp-feige
+  name: mobile-miniapp-feige
+  namespace: mobile-tool
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1                       # ⚠️ 见文件头说明
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      k8s-app: mobile-miniapp-feige
+      qcloud-app: mobile-miniapp-feige
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0             # 与现有服务一致: 先起新再停旧, 保证始终有实例
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        k8s-app: mobile-miniapp-feige
+        qcloud-app: mobile-miniapp-feige
+    spec:
+      containers:
+        - name: mobile-miniapp-feige
+          # ── 上线时仅更新此 tag ──
+          image: ccr.ccs.tencentyun.com/feige-pigeon/feige-pigeon:<TAG>
+          imagePullPolicy: IfNotPresent
+          env:
+            # 运行时配置(生产值按需替换 <...> 占位)
+            - name: TZ
+              value: Asia/Shanghai
+            - name: FG_PORT
+              value: '8080'
+            - name: FG_DEV_LOGIN
+              value: 'false'                    # ⚠️ 生产必须 false
+            - name: SPRING_DATASOURCE_URL
+              value: 'jdbc:mysql://<生产库IP>:3306/feige_pigeon?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai'
+            - name: SPRING_DATASOURCE_USERNAME
+              value: '<生产账号>'
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: '<生产密码>'
+            - name: FG_WECHAT_APPID
+              value: '<正式小程序AppID>'
+            - name: FG_WECHAT_SECRET
+              value: '<正式小程序Secret>'
+            - name: FG_SIGN_SECRET
+              value: '<强随机签名盐,勿沿用dev>'
+            - name: FG_ARRIVAL_TEMPLATE_ID
+              value: ''
+            # 堆显式收窄以匹配容器限额(limit 1.5Gi): 默认镜像内置 -Xmx1024m 会偏挤
+            - name: JAVA_OPTS
+              value: '-Xms512m -Xmx896m'
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet: {path: /v2/api-docs, port: 8080}
+            initialDelaySeconds: 25
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /v2/api-docs, port: 8080}
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 500m           # 与 tool 同规格; 堆896m配1.5Gi留足非堆空间
+              memory: 1536Mi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+          securityContext:
+            privileged: false
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+        - name: qcloudregistrykey   # 复用集群既有个人版镜像仓凭据
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30   # SpringBoot graceful shutdown 余量充足
