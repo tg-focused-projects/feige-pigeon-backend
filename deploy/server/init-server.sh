@@ -52,20 +52,27 @@ User=${RUN_USER}
 Group=${RUN_USER}
 WorkingDirectory=${APP_DIR}/current
 EnvironmentFile=${APP_DIR}/env.conf
-ExecStart=${BIN_JAVA} \$FG_JAVA_OPTS -jar ${APP_DIR}/current/${APP_NAME}.jar --server.port=\$FG_PORT
+SyslogIdentifier=${APP_NAME}
+# 端口/JVM参数由 /bin/sh 展开后 exec java（systemd 对行内 $VAR 展开不可靠，实测踩坑）
+ExecStart=/bin/sh -c 'exec ${BIN_JAVA} \$FG_JAVA_OPTS -jar ${APP_DIR}/current/${APP_NAME}.jar --server.port=\$FG_PORT'
 SuccessExitStatus=143
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=45
 LimitNOFILE=65536
-StandardOutput=append:${LOG_DIR}/${APP_NAME}.log
-StandardError=append:${LOG_DIR}/${APP_NAME}.err.log
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 UNIT
 
-echo "==> [4/6] logrotate 规则"
+echo "==> [4/6] 日志体系（journal 为主通道 + rsyslog 落文件 + logrotate）"
+if command -v rsyslogd >/dev/null && systemctl is-active rsyslog >/dev/null 2>&1; then
+    printf 'if ($programname == "%s") then %s/%s.log\n& stop\n' \
+        "$APP_NAME" "$LOG_DIR" "$APP_NAME" > /etc/rsyslog.d/30-feige.conf
+    systemctl restart rsyslog
+fi
 cat > /etc/logrotate.d/feige-pigeon <<'ROTATE'
 /data/logs/feige/*.log {
     daily
