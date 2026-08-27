@@ -91,7 +91,7 @@ spec:
           terminationMessagePolicy: File
       dnsPolicy: ClusterFirst
       imagePullSecrets:
-        - name: qcloudregistrykey   # 复用集群既有个人版镜像仓凭据
+        - name: qcloudregistrykey1   # 复用集群既有个人版镜像仓凭据(已在feige-pigeon命名空间复制)
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
