@@ -54,4 +54,4 @@ scp -q target/RELEASE_INFO "$USER_NAME@$HOST:$REMOTE_TMP/RELEASE_INFO" 2>/dev/nu
 
 # ---- 4) 远程原子切换 + 健康检查 + 失败回滚 ----------------------------------
 echo "==> 切换部署"
-ssh -t "$USER_NAME@$HOST" "bash $SWITCH_SCRIPT $REMOTE_TMP/feige-pigeon.jar '$INFO'"
+ssh "$USER_NAME@$HOST" "bash $SWITCH_SCRIPT $REMOTE_TMP/feige-pigeon.jar '$INFO'"
