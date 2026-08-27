@@ -3,6 +3,8 @@
 # 适配集群版本: apiVersion apps/v1beta2 (k8s <=1.15, 与 mobile-miniapp-tool 同款规范)
 # 部署方式: 腾讯云控制台 -> TKE 上海集群 -> 工作负载 -> 新建 -> 编辑YAML 整段粘贴
 # 上线换镜像: 只更新下方 image 的 tag 后保存(滚动更新)
+# ⚠️ ⚠️ imagePullSecrets 是命名空间级资源: 部署前需把 qcloudregistrykey 从
+#    mobile-tool 复制到 feige-pigeon(见文档), 否则 ImagePullBackOff。
 # ⚠️ replicas 必须为 1: 应用内 Quartz 使用 RAMJobStore 无分布式锁,
 #    多副本会导致定时任务重复执行; 扩副本前需先改造调度。
 # =============================================================================
@@ -12,18 +14,18 @@ metadata:
   annotations:
     description: 飞鸽传书微信小程序后端(SpringBoot单jar, 内置Quartz定时任务)
   labels:
-    k8s-app: mobile-miniapp-feige
-    qcloud-app: mobile-miniapp-feige
-  name: mobile-miniapp-feige
-  namespace: mobile-tool
+    k8s-app: miniapp-feige
+    qcloud-app: miniapp-feige
+  name: miniapp-feige
+  namespace: feige-pigeon
 spec:
   progressDeadlineSeconds: 600
   replicas: 1                       # ⚠️ 见文件头说明
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      k8s-app: mobile-miniapp-feige
-      qcloud-app: mobile-miniapp-feige
+      k8s-app: miniapp-feige
+      qcloud-app: miniapp-feige
   strategy:
     rollingUpdate:
       maxSurge: 1
@@ -32,13 +34,13 @@ spec:
   template:
     metadata:
       labels:
-        k8s-app: mobile-miniapp-feige
-        qcloud-app: mobile-miniapp-feige
+        k8s-app: miniapp-feige
+        qcloud-app: miniapp-feige
     spec:
       containers:
-        - name: mobile-miniapp-feige
+        - name: miniapp-feige
           # ── 上线时仅更新此 tag ──
-          image: ccr.ccs.tencentyun.com/feige-pigeon/feige-pigeon:<TAG>
+          image: ccr.ccs.tencentyun.com/feige-pigeon/feige-pigeon:<2026-08-27_1709>
           imagePullPolicy: IfNotPresent
           env:
             # 运行时配置(生产值按需替换 <...> 占位)
@@ -49,17 +51,17 @@ spec:
             - name: FG_DEV_LOGIN
               value: 'false'                    # ⚠️ 生产必须 false
             - name: SPRING_DATASOURCE_URL
-              value: 'jdbc:mysql://<生产库IP>:3306/feige_pigeon?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai'
+              value: 'jdbc:mysql://172.17.0.200:3389/feige_pigeon?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai'
             - name: SPRING_DATASOURCE_USERNAME
-              value: '<生产账号>'
+              value: 'soogif'
             - name: SPRING_DATASOURCE_PASSWORD
-              value: '<生产密码>'
+              value: 'BuDong20181220!'
             - name: FG_WECHAT_APPID
               value: '<正式小程序AppID>'
             - name: FG_WECHAT_SECRET
               value: '<正式小程序Secret>'
             - name: FG_SIGN_SECRET
-              value: '<强随机签名盐,勿沿用dev>'
+              value: 'dev_soogif_feige'
             - name: FG_ARRIVAL_TEMPLATE_ID
               value: ''
             # 堆显式收窄以匹配容器限额(limit 1.5Gi): 默认镜像内置 -Xmx1024m 会偏挤
@@ -109,7 +111,7 @@ metadata:
     service.kubernetes.io/qcloud-share-existed-lb: 'true'
     service.kubernetes.io/tke-existed-lbid: lb-6ddftbs7
   name: mobile-miniapp-feige
-  namespace: mobile-tool
+  namespace: feige-pigeon
 spec:
   type: LoadBalancer
   selector:
