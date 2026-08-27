@@ -66,7 +66,7 @@ WORKDIR /app
 ADD feige-pigeon.jar /app/app.jar
 RUN echo "$img_tag | $commit | built_on=\$(hostname)" > /app/BUILD_INFO
 EXPOSE 8080
-CMD ["sh", "-c", "java \$JAVA_OPTS -jar /app/app.jar"]
+CMD ["sh", "-c", "java \$JAVA_OPTS -jar /app/app.jar --server.port=\${FG_PORT:-8080}"]
 EOF
 cat Dockerfile
 
