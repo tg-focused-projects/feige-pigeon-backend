@@ -3,7 +3,7 @@
 # 适配集群版本: apiVersion apps/v1beta2 (k8s <=1.15, 与 mobile-miniapp-tool 同款规范)
 # 部署方式: 腾讯云控制台 -> TKE 上海集群 -> 工作负载 -> 新建 -> 编辑YAML 整段粘贴
 # 上线换镜像: 只更新下方 image 的 tag 后保存(滚动更新)
-# ⚠️ ⚠️ imagePullSecrets 是命名空间级资源: 部署前需把 qcloudregistrykey 从
+# ⚠️ ⚠️ imagePullSecrets 是命名空间级资源: 部署前需把 qcloudregistrykey1 从
 #    mobile-tool 复制到 feige-pigeon(见文档), 否则 ImagePullBackOff。
 # ⚠️ replicas 必须为 1: 应用内 Quartz 使用 RAMJobStore 无分布式锁,
 #    多副本会导致定时任务重复执行; 扩副本前需先改造调度。
