@@ -39,18 +39,20 @@ gitGraph
 ```bash
 cd ~/Downloads/feige-remote_git        # 主工作区（master）
 git branch develop                     # 建集成分支
-git worktree add ../feige-develop develop   # 建第二工作区
+git worktree add worktrees/feige-develop develop   # 建第二工作区（仓库内 worktrees/ 已 ignore）
 ```
 
 之后的日常：
 
 ```bash
-git worktree add ../feige-fa-recall -b feature/recall   # 新功能开新工作区
-cd ../feige-fa-recall                                   # 各工作区独立文件、独立分支
+git worktree add worktrees/feige-fa-recall -b feature/recall   # 新功能开新工作区
+cd worktrees/feige-fa-recall                                   # 各工作区独立文件、独立分支
 # ...编码、提交...
-git worktree list                                       # 查看所有工作区
-git worktree remove ../feige-fa-recall                  # 功能合并后清理
+git worktree list                                              # 查看所有工作区
+git worktree remove worktrees/feige-fa-recall                  # 功能合并后清理
 ```
+
+> 也可以把工作区建在仓库同级目录（如 `../feige-develop`），效果相同，按个人习惯选。
 
 要点：
 
