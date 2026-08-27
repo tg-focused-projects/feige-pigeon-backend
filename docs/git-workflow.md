@@ -178,6 +178,11 @@ sh /data/Dockerfile/feige-api/build_feigepigeon_images.sh main v1.0.0 # 显式�
 `SPRING_DATASOURCE_URL/USERNAME/PASSWORD`、`FG_WECHAT_APPID/SECRET`、`FG_SIGN_SECRET`、
 `FG_ARRIVAL_TEMPLATE_ID`；容器内 `cat /app/BUILD_INFO` 可查版本来源。
 
+> **扩多副本的前提**：Quartz 扫描为单机模式，多实例会重复触发。已提供 Redis 分布式锁
+> 互斥（SET NX PX + Lua 比对释放，经测试服双实例验证）：开启需注入 `FG_LOCK_ENABLED=true`
+> 与 Redis 连接（`FG_REDIS_HOST/PORT/PASSWORD`，TTL 默认 30s 可用 `FG_LOCK_TTL_SECONDS` 调整）。
+> Redis 故障时该轮任务跳过而非重复执行。
+
 ---
 
 ## 四、挂接远程托管仓库（按需）
