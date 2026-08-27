@@ -30,7 +30,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 registry=ccr.ccs.tencentyun.com
 # 镜像命名空间：feige 独立于旧业务的 gif-tools；可用环境变量 FG_IMAGE_NS 覆盖
-namespace=${FG_IMAGE_NS:-feige}
+namespace=${FG_IMAGE_NS:-feige-pigeon}
 app_name=feige-pigeon
 # 基础镜像沿用账号下既有 gif-tools/openjdk8(纯JDK8)，个人版同账号跨命名空间可直接拉取
 base_image=$registry/gif-tools/openjdk8:latest
