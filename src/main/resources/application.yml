@@ -17,6 +17,12 @@ spring:
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: GMT+8
+  # Redis：分布式锁存储（多实例部署时定时任务互斥）；单实例可不开锁开关
+  redis:
+    host: ${FG_REDIS_HOST:127.0.0.1}
+    port: ${FG_REDIS_PORT:6379}
+    password: ${FG_REDIS_PASSWORD:}
+    timeout: 3000ms
 
 mybatis:
   configuration:
@@ -34,6 +40,11 @@ feige:
     sign-secret: ${FG_SIGN_SECRET:soogif-feige-dev-sign}
     # dev 模式登录兜底：true 时 jscode2session 用 jsCode 派生 openid，不调微信（本地联调用）
     dev-login: true
+  lock:
+    # 多实例部署分布式锁总开关；单实例保持 false 行为不变
+    enabled: ${FG_LOCK_ENABLED:false}
+    # 锁自动过期秒数：须大于扫描最长耗时、小于调度周期(60s)
+    ttl-seconds: ${FG_LOCK_TTL_SECONDS:30}
 
 logging:
   level:
