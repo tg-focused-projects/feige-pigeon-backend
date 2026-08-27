@@ -2,7 +2,8 @@
 
 > 从 search-smallapp 抽取的 微信小程序「飞鸽传书」独立 SpringBoot 后端。
 > 技术栈：**SpringBoot 2.3.12 (JDK8) · MyBatis · MySQL · Quartz · Swagger · FastJSON**。
-> 版本管理：**SVN**（本地仓库 `~/Downloads/soogif-feige-pigeon-svnrepo`，本项目为工作副本）。
+> 版本管理：**Git**（master/develop 双分支 + worktree 并行开发，见 `docs/git-workflow.md`）。
+> 部署：`sh deploy/test.sh` 一键发测试服（systemd 托管、健康检查、失败自动回滚）。
 
 ---
 
@@ -107,10 +108,12 @@ sh docs/test-api.sh
 
 ---
 
-## 八、SVN
+## 八、Git 与部署
 
-- 本地仓库：`~/Downloads/soogif-feige-pigeon-svnrepo`
-- 本项目为工作副本（`svn info` 查看）；`target/`、`.DS_Store` 已 `svn:ignore`。
+- 分支模型：`master`（稳定线）+ `develop`（集成线，对应测试服）+ `feature/*` 配合 worktree 并行开发。
+- worktree 用法、一键部署、服务器结构与回滚方法详见 **`docs/git-workflow.md`**。
+- 测试服一键发布：`sh deploy/test.sh`（构建→上传→原子切换→健康检查→失败自动回滚）。
+- 原 SVN 母仓库（`~/Downloads/soogif-feige-pigeon-svnrepo`、`svn://118.25.178.99`）确认不再使用后可归档下线；删除本工作副本内 `.svn/` 目录即彻底脱离。
 
 ---
 
