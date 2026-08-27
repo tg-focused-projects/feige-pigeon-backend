@@ -1,0 +1,24 @@
+# 构建产物
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# 系统
+.DS_Store
+
+# 旧版本管理（确认迁移完成后可删除该目录）
+.svn/
+
+# 本地环境私密配置（永不入库）
+deploy/*.local.conf
+deploy/tools/*.local
+*.local.env
+
+# 日志
+*.log
+logs/

@@ -1,0 +1,41 @@
+server:
+  port: 8098
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: feige-pigeon
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/feige_pigeon?useUnicode=true&characterEncoding=utf-8&useSSL=false&allowMultiQueries=true&serverTimezone=Asia/Shanghai
+    username: root
+    password: budong12345
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: false
+
+# 飞鸽传书专用配置
+feige:
+  wechat:
+    # 飞鸽新小程序 appid / secret（本地留空；部署用环境变量注入，或直接填真实值）
+    appid: ${FG_WECHAT_APPID:}
+    secret: ${FG_WECHAT_SECRET:}
+    # 到达通知订阅消息模板 ID（空=不推送，仅记日志）
+    arrival-template-id: ${FG_ARRIVAL_TEMPLATE_ID:}
+    # 接口签名盐：sign = md5(openid + sign-secret)；本地默认值，上线需改
+    sign-secret: ${FG_SIGN_SECRET:soogif-feige-dev-sign}
+    # dev 模式登录兜底：true 时 jscode2session 用 jsCode 派生 openid，不调微信（本地联调用）
+    dev-login: true
+
+logging:
+  level:
+    com.an.feige: INFO
+    org.mybatis: WARN
