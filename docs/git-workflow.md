@@ -153,6 +153,31 @@ cat /opt/feige/current/RELEASE_INFO         # 当前线上版本是哪个 commit
 cd /opt/feige && ln -sfn releases/<旧时间戳> current && sudo systemctl restart feige-pigeon
 ```
 
+### C. 生产环境发布（Docker 镜像 → 腾讯云）
+
+生产走 **镜像交付**：发布机把 main 分支构建成 Docker 镜像推送到腾讯云上海镜像仓，
+线上服务（TKE/容器编排）更新镜像 tag 滚动重启即完成上线。
+
+```bash
+# 登录发布打包服务器 118.25.193.163 执行：
+sh /data/Dockerfile/feige-api/build_feigepigeon_images.sh             # main 构建并推送
+sh /data/Dockerfile/feige-api/build_feigepigeon_images.sh main v1.0.0 # 显式指定镜像 tag
+```
+
+关键信息：
+
+| 项 | 值 |
+|---|---|
+| 镜像 | `ccr.ccs.tencentyun.com/feige-pigeon/feige-pigeon:<日期_时间>` |
+| 基础镜像 | `ccr.ccs.tencentyun.com/gif-tools/openjdk8:latest`（纯 JDK8） |
+| 源码分支 | 固定 `main` 主干（脚本对非 main 分支有警告） |
+| 脚本位置 | 发布机 `/data/Dockerfile/feige-api/build_feigepigeon_images.sh`（仓库留档于 `deploy/docker/feige-api/`，以服务器为权威） |
+| 构建日志 | 同目录 `docker-build.log` |
+
+**运行时环境变量在腾讯云容器侧配置**（镜像不携带任何凭据）：`FG_DEV_LOGIN=false`、
+`SPRING_DATASOURCE_URL/USERNAME/PASSWORD`、`FG_WECHAT_APPID/SECRET`、`FG_SIGN_SECRET`、
+`FG_ARRIVAL_TEMPLATE_ID`；容器内 `cat /app/BUILD_INFO` 可查版本来源。
+
 ---
 
 ## 四、挂接远程托管仓库（按需）
@@ -160,8 +185,8 @@ cd /opt/feige && ln -sfn releases/<旧时间戳> current && sudo systemctl resta
 当前仅本地单机仓库，建议尽快推一份到托管平台防丢：
 
 ```bash
-# 以 Gitee 私有仓库为例（GitHub/GitLab 同理）
-git remote add origin git@gitee.com:<你的账号>/feige-pigeon.git
+# 已挂接 GitHub（tg-focused-projects/feige-pigeon-backend）
+git remote add origin git@github.com:tg-focused-projects/feige-pigeon-backend.git
 git push -u origin main develop            # 首推带 -u
 git push origin --tags
 ```
