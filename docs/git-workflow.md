@@ -9,12 +9,12 @@
 
 | 分支 | 用途 | 部署去向 |
 |---|---|---|
-| `master` | 稳定线，随时可发布 | 生产（打 tag 发布） |
+| `main` | 稳定线，随时可发布 | 生产（打 tag 发布） |
 | `develop` | 日常集成线 | 测试服默认来源 |
 | `feature/xxx` | 功能开发 | 在独立 worktree 中并行 |
 
 约定：**测试服始终部署 develop**（或多人在同一时段协商，同一端口只能跑一个版本）；
-功能验收通过后 `develop --merge--> master`，生产上线时 `git tag v1.x.x`。
+功能验收通过后 `develop --merge--> main`，生产上线时 `git tag v1.x.x`。
 
 ```mermaid
 gitGraph
@@ -26,7 +26,7 @@ gitGraph
    checkout develop
    merge feature/recall id: "验收通过合入"
    sh deploy/test.sh 测试服验证
-   checkout master
+   checkout main
    merge develop tag: "v1.0.1"
 ```
 
@@ -37,7 +37,7 @@ gitGraph
 首次设置（只需一次）：
 
 ```bash
-cd ~/Downloads/feige-remote_git        # 主工作区（master）
+cd ~/Downloads/feige-remote_git        # 主工作区（main）
 git branch develop                     # 建集成分支
 git worktree add worktrees/feige-develop develop   # 建第二工作区（仓库内 worktrees/ 已 ignore）
 ```
@@ -59,16 +59,16 @@ git worktree remove worktrees/feige-fa-recall                  # 功能合并后
 - worktree 之间共享同一个 `.git` 仓库（提交/对象互通），但各自有独立的文件快照与当前分支，
   适合「一边调 A 功能、一边热修 B」不用来回 stash 切分支。
 - 同一分支不能同时被两个工作区检出（Git 会拒绝，天然防冲突）。
-- 主工作区建议长期停在 `master`，日常去 `develop`/feature 工作区干活。
+- 主工作区建议长期停在 `main`，日常去 `develop`/feature 工作区干活。
 
 ### 日常一图流
 
 ```
 feature worktree 编码 ──> 合入 develop ──> sh deploy/test.sh 部署测试服
                                               │ 通过
-                              develop 合入 master ◄┘
+                              develop 合入 main ◄┘
                                               │
-                                    master 打 tag 发生产
+                                    main 打 tag 发生产
 ```
 
 ---
@@ -129,7 +129,7 @@ cd /opt/feige && ln -sfn releases/<旧时间戳> current && sudo systemctl resta
 ```bash
 # 以 Gitee 私有仓库为例（GitHub/GitLab 同理）
 git remote add origin git@gitee.com:<你的账号>/feige-pigeon.git
-git push -u origin master develop            # 首推带 -u
+git push -u origin main develop            # 首推带 -u
 git push origin --tags
 ```
 
