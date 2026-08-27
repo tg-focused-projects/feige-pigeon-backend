@@ -73,9 +73,42 @@ feature worktree 编码 ──> 合入 develop ──> sh deploy/test.sh 部署�
 
 ---
 
-## 三、测试服部署（110.40.183.197）
+## 三、测试服部署（两条通道）
 
-### 一键部署
+> 当前默认走 **A 通道（发布服务器构建）**；B 通道适合本机调试或紧急直发。
+
+### A. 发布打包服务器构建发布（主流程 ✅）
+
+**角色分工**：开发机只负责 `git push` → **118.25.193.163** 拉代码+编译+发布 → 测试服 **110.40.183.197** 原子切换。
+
+```
+开发机(mac) --push--> GitHub(origin) <--拉取-- 发布打包服务器(118.25.193.163)
+                                                  │ mvn编译(JDK8)
+                                                  ▼ scp+ssh(内网172.17.48.3免密)
+                                            测试服 systemd 原子切换+健康检查
+```
+
+本地推完代码后，登录发布服务器执行：
+
+```bash
+sh /data/deploy/feige_git_release.sh           # 拉 develop 分支 → 编译 → 发测试服
+sh /data/deploy/feige_git_release.sh main      # 发 main 分支
+sh /data/deploy/feige_git_release.sh develop build-only   # 只编译不发布
+```
+
+该脚本等价替代旧菜单 `online_soa_deploy.sh` 选 **9 → 选 6（测试feige-pigeon）** 的 svn 流程，
+源码位置从 `/data/svn/feige-pigeon` 变为 `/data/git/feige-pigeon-backend`。
+脚本源文件随仓库维护：`deploy/release-server/feige_git_release.sh`（服务器上为副本，改完记得重新拷贝）。
+
+发布服务器环境备忘：
+
+| 组件 | 说明 |
+|---|---|
+| GitHub 认证 | `~/.ssh/id_ed25519_github`（已加到 joe-dev111 账号 SSH Keys），`~/.ssh/config` 已配 github.com |
+| 到测试服 | `~/.ssh/id_ed25519_to-test`，别名 `ssh feige-test`（内网 172.17.48.3 免密） |
+| Maven / JDK | `/opt/apache-maven-3.3.9`（阿里云镜像）/ `/usr/java/jdk1.8.0_192` |
+
+### B. 开发机直发（备用）
 
 ```bash
 sh deploy/test.sh                # 构建 + 上传 + 原子切换 + 健康检查（失败自动回滚）
