@@ -172,6 +172,7 @@ sh /data/Dockerfile/feige-api/build_feigepigeon_images.sh main v1.0.0 # 显式�
 | 基础镜像 | `ccr.ccs.tencentyun.com/gif-tools/openjdk8:latest`（纯 JDK8） |
 | 源码分支 | 固定 `main` 主干（脚本对非 main 分支有警告） |
 | 脚本位置 | 发布机 `/data/Dockerfile/feige-api/build_feigepigeon_images.sh`（仓库留档于 `deploy/docker/feige-api/`，以服务器为权威） |
+| 部署清单 | `deploy/k8s/prod/mobile-miniapp-feige.yaml`（Deployment+Service 一体，namespace `feige-pigeon`；部署前先把 `qcloudregistrykey` 复制到该命名空间） |
 | 构建日志 | 同目录 `docker-build.log` |
 
 **运行时环境变量在腾讯云容器侧配置**（镜像不携带任何凭据）：`FG_DEV_LOGIN=false`、
