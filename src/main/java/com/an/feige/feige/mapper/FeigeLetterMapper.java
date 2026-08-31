@@ -36,10 +36,12 @@ public interface FeigeLetterMapper {
 
     @Insert("INSERT INTO feige_letter "
             + "(letter_id, share_token, sender_openid, sender_province, sender_city, sender_lat, sender_lng, "
-            + " content, image_url, pigeon_id, pigeon_name, speed_kmh, departure_time, claim_expire_time, "
-            + " status, settled, subscribed, notified, `read`, create_at, update_at) "
+            + " title, signature, content, image_url, pigeon_id, pigeon_name, speed_kmh, "
+            + " departure_time, claim_expire_time, status, settled, subscribed, notified, `read`, "
+            + " create_at, update_at) "
             + "VALUES (#{letterId}, #{shareToken}, #{senderOpenid}, #{senderProvince}, #{senderCity}, "
-            + " #{senderLat}, #{senderLng}, #{content}, #{imageUrl}, #{pigeonId}, #{pigeonName}, #{speedKmh}, "
+            + " #{senderLat}, #{senderLng}, #{title}, #{signature}, #{content}, #{imageUrl}, "
+            + " #{pigeonId}, #{pigeonName}, #{speedKmh}, "
             + " #{departureTime}, #{claimExpireTime}, #{status}, #{settled}, #{subscribed}, #{notified}, "
             + " #{read}, #{createAt}, #{updateAt})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
