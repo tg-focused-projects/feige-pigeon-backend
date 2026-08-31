@@ -2,6 +2,7 @@ package com.an.feige.feige.controller;
 
 import com.an.feige.common.CityGeoService;
 import com.an.feige.common.SignUtil;
+import com.an.feige.feige.dto.BindLetterRequest;
 import com.an.feige.feige.dto.ReplyLetterRequest;
 import com.an.feige.feige.dto.SendLetterRequest;
 import com.an.feige.feige.entity.FeigePigeon;
@@ -81,20 +82,19 @@ public class FeigeController {
     @ApiOperation("收件人认领(定位)")
     @PostMapping("/letter/bind")
     @ResponseBody
-    public Map<String, Object> bind(@RequestParam(name = "shareToken", required = true) String shareToken,
-                                    @RequestParam(name = "openid", required = true) String openid,
-                                    @RequestParam(name = "province", required = false) String province,
-                                    @RequestParam(name = "city", required = false) String city,
-                                    @RequestParam(name = "lat", required = false) BigDecimal lat,
-                                    @RequestParam(name = "lng", required = false) BigDecimal lng,
-                                    HttpServletRequest request) {
-        if (!validLocation(lat, lng)) {
-            return err(400, "缺少定位信息", "INVALID_ARGUMENT");
-        }
-        if (!sign(request, openid)) {
+    public Map<String, Object> bind(@RequestBody BindLetterRequest req,
+                                     HttpServletRequest request) {
+        if (!sign(request, req.getOpenid())) {
             return err(401, "非法请求", "INVALID_SIGNATURE");
         }
-        return feigeLetterService.claim(shareToken, openid, province, city, lat, lng);
+        // 经纬度缺失时按 province/city 从内置行政区划坐标表兜底（与 send/reply 一致）
+        BigDecimal[] coord = feigeCityGeoService.resolve(
+                req.getProvince(), req.getCity(), req.getLat(), req.getLng());
+        if (coord == null) {
+            return err(400, "缺少定位信息", "INVALID_ARGUMENT");
+        }
+        return feigeLetterService.claim(req.getShareToken(), req.getOpenid(),
+                req.getProvince(), req.getCity(), coord[0], coord[1]);
     }
 
     // -------------------- 发件人免费召回 --------------------
@@ -183,10 +183,6 @@ public class FeigeController {
     }
 
     // -------------------- 内部工具 --------------------
-
-    private boolean validLocation(BigDecimal lat, BigDecimal lng) {
-        return lat != null && lng != null;
-    }
 
     /** 小程序签名校验：sign = md5(openid + sign-secret)，同登录接口返回的一致。 */
     private boolean sign(HttpServletRequest request, String openid) {
