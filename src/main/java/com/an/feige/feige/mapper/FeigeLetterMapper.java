@@ -24,6 +24,7 @@ public interface FeigeLetterMapper {
             + "sender_lat AS senderLat, sender_lng AS senderLng, "
             + "recipient_openid AS recipientOpenid, recipient_province AS recipientProvince, "
             + "recipient_city AS recipientCity, recipient_lat AS recipientLat, recipient_lng AS recipientLng, "
+            + "title, signature, "
             + "content, image_url AS imageUrl, pigeon_id AS pigeonId, pigeon_name AS pigeonName, "
             + "speed_kmh AS speedKmh, distance_km AS distanceKm, flight_hours AS flightHours, "
             + "departure_time AS departureTime, claim_expire_time AS claimExpireTime, "
