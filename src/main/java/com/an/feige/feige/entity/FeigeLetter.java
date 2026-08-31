@@ -49,12 +49,6 @@ public class FeigeLetter {
 
     private BigDecimal recipientLng;
 
-    /** 标题(≤64 字，拆信后展示)。 */
-    private String title;
-
-    /** 落款(≤64 字，拆信后展示)。 */
-    private String signature;
-
     /** 正文(≤500 字，分享预览/未认领绝不返回，拆信后才返回)。 */
     private String content;
 
@@ -227,22 +221,6 @@ public class FeigeLetter {
 
     public void setRecipientLng(BigDecimal recipientLng) {
         this.recipientLng = recipientLng;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public void setTitle(String title) {
-        this.title = title;
-    }
-
-    public String getSignature() {
-        return signature;
-    }
-
-    public void setSignature(String signature) {
-        this.signature = signature;
     }
 
     public String getContent() {
