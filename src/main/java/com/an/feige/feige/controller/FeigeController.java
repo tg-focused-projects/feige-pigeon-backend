@@ -1,6 +1,9 @@
 package com.an.feige.feige.controller;
 
+import com.an.feige.common.CityGeoService;
 import com.an.feige.common.SignUtil;
+import com.an.feige.feige.dto.ReplyLetterRequest;
+import com.an.feige.feige.dto.SendLetterRequest;
 import com.an.feige.feige.entity.FeigePigeon;
 import com.an.feige.feige.service.FeigeLetterService;
 import com.an.feige.feige.service.FeigePigeonService;
@@ -10,6 +13,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -23,13 +27,13 @@ import java.util.Map;
 /**
  * 飞鸽传书-微信小程序接口。
  *
- * <p>路由前缀 /small-soogif/feige，统一返回 {code, msg, data, errorKey}。
+ * <p>路由前缀 /feige，统一返回 {code, msg, data, errorKey}。
  * 写操作（send/bind/recall/reply/subscribe）走 sign 签名校验；
  * 分享公开参数使用 shareToken；正文与精确坐标仅在拆信后返回。</p>
  */
 @Api(tags = "飞鸽传书")
 @RestController
-@RequestMapping("/small-soogif/feige")
+@RequestMapping("/feige")
 public class FeigeController {
 
     @Autowired
@@ -41,26 +45,27 @@ public class FeigeController {
     @Autowired
     private SignUtil feigeSignUtil;
 
+    @Autowired
+    private CityGeoService feigeCityGeoService;
+
     // -------------------- 写信并放飞（发送即起飞） --------------------
     @ApiOperation("写信并放飞")
     @PostMapping("/letter/send")
     @ResponseBody
-    public Map<String, Object> send(@RequestParam(name = "openid", required = true) String openid,
-                                    @RequestParam(name = "content", required = true) String content,
-                                    @RequestParam(name = "imageUrl", required = false) String imageUrl,
-                                    @RequestParam(name = "province", required = false) String province,
-                                    @RequestParam(name = "city", required = false) String city,
-                                    @RequestParam(name = "lat", required = false) BigDecimal lat,
-                                    @RequestParam(name = "lng", required = false) BigDecimal lng,
-                                    @RequestParam(name = "pigeonId", required = false) Long pigeonId,
+    public Map<String, Object> send(@RequestBody SendLetterRequest req,
                                     HttpServletRequest request) {
-        if (!validLocation(lat, lng)) {
-            return err(400, "缺少定位信息", "INVALID_ARGUMENT");
-        }
-        if (!sign(request, openid)) {
+        if (!sign(request, req.getOpenid())) {
             return err(401, "非法请求", "INVALID_SIGNATURE");
         }
-        return feigeLetterService.send(openid, content, imageUrl, province, city, lat, lng, pigeonId);
+        // 经纬度可选：缺失时由服务端按 province/city 从内置行政区划坐标表兜底
+        BigDecimal[] coord = feigeCityGeoService.resolve(
+                req.getProvince(), req.getCity(), req.getLat(), req.getLng());
+        if (coord == null) {
+            return err(400, "缺少定位信息", "INVALID_ARGUMENT");
+        }
+        return feigeLetterService.send(req.getOpenid(), req.getTitle(), req.getContent(),
+                req.getImageUrl(), req.getProvince(), req.getCity(),
+                coord[0], coord[1], req.getPigeonId(), req.getSignature());
     }
 
     // -------------------- 分享预览（不产生认领/状态变更） --------------------
@@ -127,22 +132,20 @@ public class FeigeController {
     @ApiOperation("回信")
     @PostMapping("/letter/reply")
     @ResponseBody
-    public Map<String, Object> reply(@RequestParam(name = "openid", required = true) String openid,
-                                     @RequestParam(name = "content", required = true) String content,
-                                     @RequestParam(name = "imageUrl", required = false) String imageUrl,
-                                     @RequestParam(name = "province", required = false) String province,
-                                     @RequestParam(name = "city", required = false) String city,
-                                     @RequestParam(name = "lat", required = false) BigDecimal lat,
-                                     @RequestParam(name = "lng", required = false) BigDecimal lng,
-                                     @RequestParam(name = "letterId", required = true) String letterId,
+    public Map<String, Object> reply(@RequestBody ReplyLetterRequest req,
                                      HttpServletRequest request) {
-        if (!validLocation(lat, lng)) {
-            return err(400, "缺少定位信息", "INVALID_ARGUMENT");
-        }
-        if (!sign(request, openid)) {
+        if (!sign(request, req.getOpenid())) {
             return err(401, "非法请求", "INVALID_SIGNATURE");
         }
-        return feigeLetterService.reply(openid, content, imageUrl, province, city, lat, lng, letterId);
+        // 经纬度缺失时按 province/city 从内置行政区划坐标表兜底
+        BigDecimal[] coord = feigeCityGeoService.resolve(
+                req.getProvince(), req.getCity(), req.getLat(), req.getLng());
+        if (coord == null) {
+            return err(400, "缺少定位信息", "INVALID_ARGUMENT");
+        }
+        return feigeLetterService.reply(req.getOpenid(), req.getTitle(), req.getContent(),
+                req.getImageUrl(), req.getProvince(), req.getCity(),
+                coord[0], coord[1], req.getSignature(), req.getLetterId());
     }
 
     // -------------------- 订阅到达通知 --------------------
