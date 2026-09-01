@@ -48,8 +48,8 @@ public interface FeigePigeonMapper {
             + "WHERE id = #{id} AND status = 'SENDING'")
     int markIdle(@Param("id") Long id, @Param("updateAt") Date updateAt);
 
-    /** 送达结算：累计 deliver/里程/最远/经验，可能升级提速，并置回空闲。 */
-    @Update("UPDATE feige_pigeon SET level = #{level}, exp = #{exp}, speed_kmh = #{speedKmh}, "
+    /** 送达结算（V1 规格 14.1：不更新等级/经验/速度，仅累计真实旅程数据并置回空闲）。 */
+    @Update("UPDATE feige_pigeon SET "
             + "delivered_count = #{deliveredCount}, total_mileage = #{totalMileage}, "
             + "farthest_distance = #{farthestDistance}, status = #{status}, update_at = #{updateAt} "
             + "WHERE id = #{id}")
