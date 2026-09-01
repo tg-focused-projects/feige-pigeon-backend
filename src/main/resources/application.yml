@@ -47,8 +47,21 @@ feige:
     enabled: ${FG_LOCK_ENABLED:false}
     # 锁自动过期秒数：须大于扫描最长耗时、小于调度周期(60s)
     ttl-seconds: ${FG_LOCK_TTL_SECONDS:30}
+  pigeon:
+    # 多鸽付费能力开关（规格15.6 PAID_PIGEON_ENABLED）：false=第2~6只免费创建（无支付资格期兼容）；true=必须购买
+    paid-enabled: ${PAID_PIGEON_ENABLED:false}
+    # 鸽舍位置价格（分）：下标0=位置1(小白免费占位)，位置2~6价格递增（A1 待定，配置化可调）
+    prices: ${FG_PIGEON_PRICES:0,100,300,600,1000,1500}
+  pay:
+    # 微信支付凭证（虚拟支付资格申请中，A2：可留空；留空时 mock-pay=true 允许本地/测试环境模拟支付成功）
+    mch-id: ${FG_PAY_MCH_ID:}
+    api-key: ${FG_PAY_API_KEY:}
+    appid: ${FG_WECHAT_APPID:}
+    # mock 支付模式：凭证未配且为 true 时，confirm 接口直接置 PAID（仅限测试环境，生产必须 false）
+    mock-pay: ${FG_PAY_MOCK:true}
 
 logging:
   level:
     com.an.feige: INFO
     org.mybatis: WARN
+
