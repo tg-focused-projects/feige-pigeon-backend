@@ -3,7 +3,6 @@ package com.an.feige.user.service;
 import com.an.feige.common.Result;
 import com.an.feige.common.SignUtil;
 import com.an.feige.common.WeChatClient;
-import com.an.feige.feige.mapper.FeigeLetterMapper;
 import com.an.feige.user.entity.FgUser;
 import com.an.feige.user.mapper.FgUserMapper;
 import org.slf4j.Logger;
@@ -36,9 +35,6 @@ public class FgUserService {
 
     @Resource
     private SignUtil signUtil;
-
-    @Resource
-    private FeigeLetterMapper feigeLetterMapper;
 
     /** 微信登录（注册+登录一体）。 */
     public Result<Map<String, Object>> wechatLogin(String jsCode, String grantType) {
@@ -87,8 +83,6 @@ public class FgUserService {
         data.put("nickname", user.getNickname());
         data.put("face", user.getFace());
         data.put("sign", signUtil.sign(openid));
-        // 是否寄过信：0-未寄过, 1-已寄过（查询 feige_letter 发件记录）
-        data.put("isSendLetter", feigeLetterMapper.countSentByOpenid(openid) > 0 ? 1 : 0);
         return Result.ok(data);
     }
 
