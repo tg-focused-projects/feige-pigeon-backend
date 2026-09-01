@@ -39,7 +39,7 @@ feige:
     # 接口签名盐：sign = md5(openid + sign-secret)；本地默认值，上线需改
     sign-secret: ${FG_SIGN_SECRET:soogif-feige-dev-sign}
     # dev 模式登录兜底：true 时 jscode2session 用 jsCode 派生 openid，不调微信（本地联调用）
-    dev-login: ${FG_DEV_LOGIN:true}
+    dev-login: true
   lock:
     # 多实例部署分布式锁总开关；单实例保持 false 行为不变
     enabled: ${FG_LOCK_ENABLED:false}
