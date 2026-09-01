@@ -38,13 +38,18 @@ public interface FeigeLetterMapper {
 
     @Insert("INSERT INTO feige_letter "
             + "(letter_id, share_token, sender_openid, sender_province, sender_city, sender_lat, sender_lng, "
+            + " recipient_openid, recipient_province, recipient_city, recipient_lat, recipient_lng, "
             + " title, signature, content, image_url, pigeon_id, pigeon_name, speed_kmh, "
-            + " departure_time, claim_expire_time, status, settled, subscribed, notified, `read`, "
+            + " distance_km, flight_hours, "
+            + " departure_time, arrival_time, claim_expire_time, status, settled, subscribed, notified, `read`, "
             + " thread_id, reply_to_letter_id, create_at, update_at) "
             + "VALUES (#{letterId}, #{shareToken}, #{senderOpenid}, #{senderProvince}, #{senderCity}, "
-            + " #{senderLat}, #{senderLng}, #{title}, #{signature}, #{content}, #{imageUrl}, "
+            + " #{senderLat}, #{senderLng}, "
+            + " #{recipientOpenid}, #{recipientProvince}, #{recipientCity}, #{recipientLat}, #{recipientLng}, "
+            + " #{title}, #{signature}, #{content}, #{imageUrl}, "
             + " #{pigeonId}, #{pigeonName}, #{speedKmh}, "
-            + " #{departureTime}, #{claimExpireTime}, #{status}, #{settled}, #{subscribed}, #{notified}, "
+            + " #{distanceKm}, #{flightHours}, "
+            + " #{departureTime}, #{arrivalTime}, #{claimExpireTime}, #{status}, #{settled}, #{subscribed}, #{notified}, "
             + " #{read}, #{threadId}, #{replyToLetterId}, #{createAt}, #{updateAt})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insertSelective(FeigeLetter record);
