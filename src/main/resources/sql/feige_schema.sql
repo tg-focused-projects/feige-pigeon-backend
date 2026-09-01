@@ -162,3 +162,28 @@ ALTER TABLE `feige_pigeon`
 -- 存量库若仍存在单 openid 唯一键，先删除再建组合唯一键（幂等：键不存在时跳过）
 -- DROP INDEX `uk_openid` ON `feige_pigeon`;
 ALTER TABLE `feige_pigeon` ADD UNIQUE KEY `uk_openid_role` (`openid`, `role_key`);
+
+-- ---------- 订单（V4：多鸽付费购买，规格15） ----------
+-- 支付资格申请中（A2）：开关 PAID_PIGEON_ENABLED 控制；凭证未配时走 mock 支付确认（仅测试）
+CREATE TABLE IF NOT EXISTS `feige_order` (
+  `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `order_no`     VARCHAR(40)  NOT NULL                COMMENT '内部订单号(唯一)',
+  `openid`       VARCHAR(64)  NOT NULL                COMMENT '下单用户',
+  `role_key`     VARCHAR(24)  NOT NULL                COMMENT '购买角色: PANGDUN/HUIHUI/ASHAN/LAOYOUCHAI/HUALING',
+  `slot_index`   INT          NOT NULL                COMMENT '鸽舍位置序号(2~6,价格绑定位置,规格15.3)',
+  `amount_fen`   INT          NOT NULL                COMMENT '金额(分)',
+  `status`       VARCHAR(16)  NOT NULL DEFAULT 'CREATED' COMMENT 'CREATED/PAID/REFUNDED/CANCELLED',
+  `pay_trade_no` VARCHAR(64)  DEFAULT NULL            COMMENT '支付平台交易号(回调写入)',
+  `pay_time`     DATETIME     DEFAULT NULL            COMMENT '支付成功时间',
+  `refund_time`  DATETIME     DEFAULT NULL            COMMENT '退款时间',
+  `create_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_no` (`order_no`),
+  KEY `idx_openid` (`openid`),
+  KEY `idx_openid_role` (`openid`, `role_key`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='飞鸽传书-多鸽购买订单';
+
+-- ---------- 存量库升级（V4：订单表） ----------
+-- 已有库执行一次即可（建表语句幂等，直接复用上面 CREATE TABLE IF NOT EXISTS）

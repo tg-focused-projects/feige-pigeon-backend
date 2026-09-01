@@ -5,6 +5,9 @@ import com.an.feige.feige.mapper.FeigePigeonMapper;
 import com.an.feige.feige.entity.FeigeLetter;
 import com.an.feige.feige.entity.FeigePigeon;
 import com.an.feige.feige.entity.PigeonRole;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -26,6 +29,7 @@ import java.util.Map;
 @Service
 public class FeigePigeonService {
 
+    private static final Logger log = LoggerFactory.getLogger(FeigePigeonService.class);
     private static final BigDecimal DEFAULT_SPEED = new BigDecimal("177.00");
     /** 每用户最多6只（规格15.1）。 */
     private static final int MAX_PIGEONS = 6;
@@ -35,6 +39,8 @@ public class FeigePigeonService {
 
     @Resource
     private FeigeLetterMapper feigeLetterMapper;
+    @Value("${feige.pigeon.paid-enabled:false}")
+    private boolean paidEnabled;
 
     /** 取用户鸽子（小白），不存在则初始化「小白」（规格3.2：首次进入自动获得）。 */
     public FeigePigeon getOrInitByOpenid(String openid) {
@@ -69,6 +75,11 @@ public class FeigePigeonService {
         return id == null ? null : feigePigeonMapper.selectByPrimaryKey(id);
     }
 
+    /** 按角色查用户鸽子（V1.2 权益/重复购买判断）。 */
+    public FeigePigeon getByOpenidAndRole(String openid, String roleKey) {
+        return feigePigeonMapper.selectByOpenidAndRole(openid, roleKey);
+    }
+
     /** 置鸽子为送信中；返回是否成功（空闲才能放飞）。 */
     public boolean markSending(Long id) {
         return feigePigeonMapper.markSending(id, new Date()) > 0;
@@ -95,6 +106,44 @@ public class FeigePigeonService {
      * @return 创建成功返回鸽子；角色非法/已拥有/超过6只上限返回 null
      */
     public FeigePigeon createByRole(String openid, String roleKey) {
+        if (!PigeonRole.isValid(roleKey)) {
+            return null;
+        }
+        if (paidEnabled && !FeigePigeon.ROLE_XIAOBAI.equals(roleKey)) {
+            // 付费开关开启：第2~6只必须走订单权益发放，禁止直接创建
+            log.warn("付费开关开启，拒绝直接创建鸽子 openid={} roleKey={}", openid, roleKey);
+            return null;
+        }
+        if (feigePigeonMapper.selectByOpenidAndRole(openid, roleKey) != null) {
+            return null;
+        }
+        if (feigePigeonMapper.selectListByOpenid(openid).size() >= MAX_PIGEONS) {
+            return null;
+        }
+        Date now = new Date();
+        FeigePigeon fresh = new FeigePigeon();
+        fresh.setOpenid(openid);
+        fresh.setName(PigeonRole.defaultName(roleKey));
+        fresh.setRoleKey(roleKey);
+        fresh.setLevel(1);
+        fresh.setExp(0);
+        fresh.setSpeedKmh(DEFAULT_SPEED);
+        fresh.setStamina(3);
+        fresh.setDeliveredCount(0);
+        fresh.setTotalMileage(BigDecimal.ZERO);
+        fresh.setFarthestDistance(BigDecimal.ZERO);
+        fresh.setStatus(FeigePigeon.STATUS_IDLE);
+        fresh.setCreateAt(now);
+        fresh.setUpdateAt(now);
+        feigePigeonMapper.insertSelective(fresh);
+        return fresh;
+    }
+
+    /**
+     * 支付权益发放专用创建（规格15.5）：仅支付确认路径调用，不受 paid-enabled 开关拦截。
+     * 幂等：已拥有/超上限返回 null。
+     */
+    public FeigePigeon grantByRole(String openid, String roleKey) {
         if (!PigeonRole.isValid(roleKey)) {
             return null;
         }

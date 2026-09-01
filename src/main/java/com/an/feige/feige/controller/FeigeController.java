@@ -8,7 +8,9 @@ import com.an.feige.feige.dto.ReportRequest;
 import com.an.feige.feige.dto.SendLetterRequest;
 import com.an.feige.feige.entity.FeigePigeon;
 import com.an.feige.feige.entity.PigeonRole;
+import com.an.feige.feige.entity.FeigeOrder;
 import com.an.feige.feige.service.FeigeLetterService;
+import com.an.feige.feige.service.FeigePayService;
 import com.an.feige.feige.service.FeigePigeonService;
 import com.an.feige.feige.service.FeigeReportService;
 import io.swagger.annotations.Api;
@@ -50,6 +52,9 @@ public class FeigeController {
 
     @Autowired
     private FeigeReportService feigeReportService;
+
+    @Autowired
+    private FeigePayService feigePayService;
 
     @Autowired
     private SignUtil feigeSignUtil;
@@ -307,6 +312,76 @@ public class FeigeController {
             return err(404, "鸽子不存在", "PIGEON_NOT_FOUND");
         }
         return feigePigeonService.journeys(pigeon);
+    }
+
+    // -------------------- 多鸽付费购买（V1.2，规格15） --------------------
+    @ApiOperation("鸽舍槽位(空位置/候选角色/价格)")
+    @GetMapping("/pigeon/slots")
+    @ResponseBody
+    public Map<String, Object> pigeonSlots(@RequestParam(name = "openid", required = true) String openid) {
+        return ok(feigePayService.slots(openid));
+    }
+
+    @ApiOperation("创建购买订单")
+    @PostMapping("/pigeon/order")
+    @ResponseBody
+    public Map<String, Object> pigeonOrder(@RequestParam(name = "openid", required = true) String openid,
+                                           @RequestParam(name = "roleKey", required = true) String roleKey,
+                                           HttpServletRequest request) {
+        if (!sign(request, openid)) {
+            return err(401, "非法请求", "INVALID_SIGNATURE");
+        }
+        Map<String, Object> order = feigePayService.createOrder(openid, roleKey);
+        if (order == null) {
+            return err(409, "下单失败：开关关闭/角色非法/已拥有", "ORDER_CREATE_FAILED");
+        }
+        return ok(order);
+    }
+
+    @ApiOperation("支付确认(mock/回调统一入口)")
+    @PostMapping("/pigeon/confirm")
+    @ResponseBody
+    public Map<String, Object> pigeonConfirm(@RequestParam(name = "openid", required = true) String openid,
+                                             @RequestParam(name = "orderNo", required = true) String orderNo,
+                                             @RequestParam(name = "payTradeNo", required = false) String payTradeNo,
+                                             HttpServletRequest request) {
+        if (!sign(request, openid)) {
+            return err(401, "非法请求", "INVALID_SIGNATURE");
+        }
+        FeigeOrder order = feigePayService.getOrder(orderNo);
+        if (order == null || !openid.equals(order.getOpenid())) {
+            return err(404, "订单不存在", "ORDER_NOT_FOUND");
+        }
+        // mock 支付模式（资格申请中）：凭证未配时 confirm 直接确认；生产走微信回调
+        Map<String, Object> result = feigePayService.confirmPaid(orderNo, payTradeNo);
+        if (result == null) {
+            return err(409, "订单状态不允许确认", "ORDER_STATE_INVALID");
+        }
+        return ok(result);
+    }
+
+    @ApiOperation("微信支付回调(服务端对服务端)")
+    @PostMapping("/pay/callback")
+    @ResponseBody
+    public Map<String, Object> payCallback(@RequestBody Map<String, Object> body) {
+        // 微信支付回调（资格开通后接入验签；当前 mock 模式直接按 orderNo 确认）
+        String orderNo = body == null ? null : String.valueOf(body.get("orderNo"));
+        String payTradeNo = body == null ? null : String.valueOf(body.get("payTradeNo"));
+        if (orderNo == null) {
+            return err(400, "参数错误", "INVALID_ARGUMENT");
+        }
+        Map<String, Object> result = feigePayService.confirmPaid(orderNo, payTradeNo);
+        if (result == null) {
+            return err(409, "订单状态不允许", "ORDER_STATE_INVALID");
+        }
+        return ok(result);
+    }
+
+    @ApiOperation("我的购买订单")
+    @GetMapping("/pigeon/orders")
+    @ResponseBody
+    public Map<String, Object> pigeonOrders(@RequestParam(name = "openid", required = true) String openid) {
+        return ok(feigePayService.ordersOf(openid));
     }
 
     // -------------------- 内部工具 --------------------
