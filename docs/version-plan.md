@@ -96,6 +96,10 @@
    订单状态 CREATED → 待支付。
 2. **支付回调接口**：`POST /feige/pay/notify`（微信服务器回调）：
    验签（v3 用平台证书验签/解密，v2 用 md5 校验）→ 解析 out_trade_no=orderNo → 调 `confirmPaid(orderNo, transactionId)`（幂等：CREATED→PAID 仅一次，权益发放查重）→ 返回微信要求的成功应答（`{"code":"SUCCESS"}`，否则微信会重试）。
+3. **支付状态查询接口**：`GET /feige/order/status?orderNo=&openid=`（前端轮询用）：
+   返回 `{ orderNo, status(CREATED/PAID/REFUNDED/CLOSED), roleKey, slotIndex, amountFen }`；
+   仅本人可查（openid 校验）；支付完成（PAID）即权益已发放，前端据此跳转鸽舍/入住动画；
+   轮询建议前端 2~3 秒间隔，超时（如 60s）后提示「支付结果确认中」并保留查询入口（与规格 18.5「支付成功但权益确认中」异常态对应）。
 
 #### 微信平台配置（开发平台/商户平台）
 
