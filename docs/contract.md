@@ -1,12 +1,12 @@
-# 《飞鸽传书》独立后端 接口契约（V3.2 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V4.0 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V3.2**（2026-09-01，V1.1 修复：share-preview 新增 senderSignature/departureTime；含 V1.1 全部）
+> 版本：**V4.0**（2026-09-02，V1.2 付费能力：多鸽购买订单/支付回调/权益发放幂等/鸽舍槽位；含 V1.1 全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://test.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
 > 登录：自研 `WeChatClient`（jscode2session/订阅推送），不做 union 绑定
-> 签名：`sign = md5(openid + sign-secret)`；写操作（send/bind/recall/reply/subscribe/report/rename/create）请求头带 `sign`
+> 签名：`sign = md5(openid + sign-secret)`；写操作（send/bind/recall/reply/subscribe/report/rename/create/order/confirm）请求头带 `sign`
 
 ---
 
@@ -170,6 +170,34 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 错误：`PIGEON_NOT_FOUND` `RENAME_NOT_ALLOWED` `INVALID_ARGUMENT` `INVALID_SIGNATURE`
 
 ### `GET /feige/pigeon/journeys` — 鸽子旅程履历（**V3 新增**，无 sign）
+### `GET /feige/pigeon/slots` — 鸽舍槽位（**V4 新增**，无 sign）
+入参：`openid*`
+出参：`{ slots:[{ index, roleKey, name|null, status(IDLE|SENDING|EMPTY), deliveredCount, totalMileage, amountFen, paid, motto }], freeCount, maxSlots:6, paidEnabled, mockPay }`
+说明：第1位小白免费；空位置展示候选角色与价格（规格15.4/16.3）。
+
+### `POST /feige/pigeon/order` — 创建购买订单（**V4 新增**，form，需 sign）
+入参：`openid* roleKey*`
+条件：`PAID_PIGEON_ENABLED=true`（开关关闭返回 `ORDER_CREATE_FAILED`）；角色合法且非小白；未拥有该角色；该角色无 PAID 订单。
+出参：`{ orderNo, roleKey, slotIndex, amountFen(分), status:"CREATED" }`
+错误：`ORDER_CREATE_FAILED` `INVALID_SIGNATURE`
+
+### `POST /feige/pigeon/confirm` — 支付确认（**V4 新增**，form，需 sign；mock 支付）
+入参：`openid* orderNo* payTradeNo?`
+说明：支付资格申请中（A2）凭证未配时，`FG_PAY_MOCK=true` 允许直接确认（仅测试环境；生产必须走微信回调 `/pay/callback`）。确认成功置订单 `PAID` 并发放权益（创建鸽子，幂等）。
+出参：`{ orderNo, roleKey, slotIndex, amountFen, status:"PAID", paid:true }`
+错误：`ORDER_NOT_FOUND` `ORDER_STATE_INVALID` `INVALID_SIGNATURE`
+
+### `POST /feige/pay/callback` — 微信支付回调（**V4 新增**，JSON body，服务端对服务端）
+入参：`{ orderNo, payTradeNo }`
+说明：支付结果以后端回调为准（规格15.5）；资格开通后接入微信验签。幂等：重复回调不重复发放权益。
+出参：`{ orderNo, roleKey, status:"PAID", paid:true }`
+
+### `GET /feige/pigeon/orders` — 我的购买订单（**V4 新增**，无 sign）
+入参：`openid*`
+出参：`[{ orderNo, roleKey, slotIndex, amountFen, status(CREATED|PAID|REFUNDED|CANCELLED), payTime, createAt }]`
+
+**配置（V1.2）**：`PAID_PIGEON_ENABLED`（规格15.6 开关，默认 false=免费创建兼容）、`FG_PIGEON_PRICES`（位置2~6价格分，默认 `0,100,300,600,1000,1500`，A1 待定）、`FG_PAY_MCH_ID/FG_PAY_API_KEY`（微信支付凭证，A2 申请中可空）、`FG_PAY_MOCK`（mock 支付，默认 true 仅测试）。
+
 入参：`openid* pigeonId*`
 出参：`{ pigeonId, name, roleKey, deliveredCount, totalMileage, farthestDistance, cities:[去过去重城市], journeys:[{ letterId, status, senderCity, recipientCity, distanceKm, flightHours, departureTime, arrivalTime, reply }] }`
 说明：单次旅程履历含真实旅程数据（规格14.2）；城市足迹仅自己可见（规格17.3）。
@@ -210,6 +238,6 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 | V3.0 | 2026-09-01 | V1.1：订阅表 feige_subscription 双方独立订阅（ARRIVAL/REPLY_ARRIVAL）、订阅接口支持 type、飞行页返回订阅状态；投诉 POST /feige/report；多鸽体系 pigeon/role_key + PigeonRole 六角色、GET /pigeon/list、POST /pigeon/create、POST /pigeon/rename（首达后）、GET /pigeon/journeys（含去过城市）；回信到达通知模板配置 reply-arrival-template-id |
 | V3.1 | 2026-09-01 | V11-8 通知接通：订阅模板审核通过并适配（thing1/time2/thing3/thing4 字段，发件人/收件人区分文案）；WeChatClient 推送支持指定模板 ID；yml 默认填入模板 ID |
 | V3.2 | 2026-09-01 | share-preview 返参新增 senderSignature（发件落款）、departureTime（发出时间），对齐规格6.1 认领前展示 |
+| V4.0 | 2026-09-02 | V1.2 付费能力：feige_order 订单表、PAID_PIGEON_ENABLED 开关（规格15.6）、GET /pigeon/slots（空位/候选/价格）、POST /pigeon/order、POST /pigeon/confirm（mock）、POST /pay/callback（支付回调）、GET /pigeon/orders；支付确认幂等发放权益、退款不删历史（规格15.5）；价格配置 FG_PIGEON_PRICES（A1 待定） |
 | V2.0 | 2026-09-01 | 路径去 `/small-soogif`；send/bind/reply 改 JSON；新增 title/signature、isSendLetter、坐标兜底、5分钟保底、回信直达、往返字段、信箱列表；关闭等级/经验结算 |
 | V1.3 | 2026-08-27 | 旧版契约（路径含 /small-soogif，form 入参，无 V2 字段） |
-
