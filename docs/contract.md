@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V3.1 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V3.2 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V3.1**（2026-09-01，V1.1 通知接通：订阅模板审核通过并适配字段/文案；含 V1.1 全部：订阅模型/双端通知/投诉/多鸽/改名/履历）
+> 版本：**V3.2**（2026-09-01，V1.1 修复：share-preview 新增 senderSignature/departureTime；含 V1.1 全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://test.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -84,9 +84,10 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 出参：`{ letterId, shareToken, status:"FLYING_UNCLAIMED", departureTime, claimExpireTime, serverTime, pigeon:{name,level,speedKmh}, senderCity }`
 错误：`INVALID_ARGUMENT` `INVALID_SIGNATURE` `PIGEON_BUSY`
 
-### `GET /feige/letter/share-preview` — 分享预览（不产生状态变更，不返回正文/坐标/标题/落款）
+### `GET /feige/letter/share-preview` — 分享预览（不产生状态变更；返回发件落款与起飞时间，不返回正文/标题/精确坐标）
 入参：`shareToken* openid?`
-出参：`{ claimStatus:"AVAILABLE|CLAIMED_BY_ME|CLAIMED_BY_OTHER|RECALLED|EXPIRED", letterId, senderProvince, senderCity, pigeonName, serverTime }`
+出参：`{ claimStatus:"AVAILABLE|CLAIMED_BY_ME|CLAIMED_BY_OTHER|RECALLED|EXPIRED", letterId, senderProvince, senderCity, **senderSignature**, **departureTime**, pigeonName, serverTime }`
+（`senderSignature` 发件落款，可为空；`departureTime` 信件发出时间 `yyyy-MM-dd HH:mm:ss`。规格6.1：认领前可展示落款与起飞时间。）
 错误：`LETTER_NOT_FOUND`
 
 ### `POST /feige/letter/bind` — 原子认领（JSON body）
@@ -208,6 +209,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 |---|---|---|
 | V3.0 | 2026-09-01 | V1.1：订阅表 feige_subscription 双方独立订阅（ARRIVAL/REPLY_ARRIVAL）、订阅接口支持 type、飞行页返回订阅状态；投诉 POST /feige/report；多鸽体系 pigeon/role_key + PigeonRole 六角色、GET /pigeon/list、POST /pigeon/create、POST /pigeon/rename（首达后）、GET /pigeon/journeys（含去过城市）；回信到达通知模板配置 reply-arrival-template-id |
 | V3.1 | 2026-09-01 | V11-8 通知接通：订阅模板审核通过并适配（thing1/time2/thing3/thing4 字段，发件人/收件人区分文案）；WeChatClient 推送支持指定模板 ID；yml 默认填入模板 ID |
+| V3.2 | 2026-09-01 | share-preview 返参新增 senderSignature（发件落款）、departureTime（发出时间），对齐规格6.1 认领前展示 |
 | V2.0 | 2026-09-01 | 路径去 `/small-soogif`；send/bind/reply 改 JSON；新增 title/signature、isSendLetter、坐标兜底、5分钟保底、回信直达、往返字段、信箱列表；关闭等级/经验结算 |
 | V1.3 | 2026-08-27 | 旧版契约（路径含 /small-soogif，form 入参，无 V2 字段） |
 
