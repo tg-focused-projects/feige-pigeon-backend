@@ -59,7 +59,9 @@ git worktree remove worktrees/feige-fa-recall                  # 功能合并后
 - worktree 之间共享同一个 `.git` 仓库（提交/对象互通），但各自有独立的文件快照与当前分支，
   适合「一边调 A 功能、一边热修 B」不用来回 stash 切分支。
 - 同一分支不能同时被两个工作区检出（Git 会拒绝，天然防冲突）。
-- 主工作区建议长期停在 `main`，日常去 `develop`/feature 工作区干活。
+- 主工作区停在 `develop`（根目录 `AGENTS.md` 与最新文档常驻，新会话自动加载协作规则）；
+  功能开发时按需新建 feature worktree，合入 develop 后删除。
+- `main` 分支由人工维护（合并/推送），AI 不触碰。
 
 ### 日常一图流（固定迭代流程 v2，2026-09 起执行）
 
