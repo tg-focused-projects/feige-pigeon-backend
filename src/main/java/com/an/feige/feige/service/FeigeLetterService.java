@@ -35,6 +35,10 @@ public class FeigeLetterService {
 
     private static final BigDecimal EARTH_RADIUS_KM = new BigDecimal("6371.0");
     private static final int MAX_CONTENT_LEN = 500;
+    private static final int MAX_TITLE_LEN = 64;
+    /** 最小飞行时长(小时)：同城/近距离在城市级坐标精度下避免立即送达，保底约5分钟 */
+    private static final BigDecimal MIN_FLIGHT_HOURS = new BigDecimal("0.0833");
+    private static final int MAX_SIGNATURE_LEN = 64;
     private static final int CLAIM_EXPIRE_HOURS = 72;
     private static final long RECALL_GRACE_MS = 30L * 60 * 1000;
     private static final String DATE_PATTERN = "yyyy-MM-dd HH:mm:ss";
@@ -57,8 +61,9 @@ public class FeigeLetterService {
     // ============================ 写信并放飞（发送即起飞） ============================
 
     @Transactional
-    public Map<String, Object> send(String openid, String content, String imageUrl,
-                                    String province, String city, BigDecimal lat, BigDecimal lng, Long pigeonId) {
+    public Map<String, Object> send(String openid, String title, String content, String imageUrl,
+                                    String province, String city, BigDecimal lat, BigDecimal lng,
+                                    Long pigeonId, String signature) {
         FeigePigeon pigeon = pigeonId == null
                 ? feigePigeonService.getOrInitByOpenid(openid)
                 : feigePigeonService.getById(pigeonId);
@@ -80,6 +85,8 @@ public class FeigeLetterService {
         letter.setSenderCity(city);
         letter.setSenderLat(lat);
         letter.setSenderLng(lng);
+        letter.setTitle(StringUtils.abbreviate(title, MAX_TITLE_LEN));
+        letter.setSignature(StringUtils.abbreviate(signature, MAX_SIGNATURE_LEN));
         letter.setContent(StringUtils.abbreviate(content, MAX_CONTENT_LEN));
         letter.setImageUrl(imageUrl);
         letter.setPigeonId(locked.getId());
@@ -179,6 +186,10 @@ public class FeigeLetterService {
         BigDecimal distance = haversineKm(letter.getSenderLat(), letter.getSenderLng(), lat, lng);
         BigDecimal speed = letter.getSpeedKmh() == null ? new BigDecimal("177.00") : letter.getSpeedKmh();
         BigDecimal flightHours = distance.divide(speed, 2, RoundingMode.HALF_UP);
+        // 保底飞行时长：同城坐标精度下距离可能为0或极小，至少飞行约5分钟
+        if (flightHours.compareTo(MIN_FLIGHT_HOURS) < 0) {
+            flightHours = MIN_FLIGHT_HOURS;
+        }
         Date departure = letter.getDepartureTime();
         Date arrival = new Date(departure.getTime() + hoursToMs(flightHours));
 
@@ -364,6 +375,8 @@ public class FeigeLetterService {
 
         Map<String, Object> data = new HashMap<>();
         data.put("letterId", letterId);
+        data.put("title", letter.getTitle());
+        data.put("signature", letter.getSignature());
         data.put("content", letter.getContent());
         data.put("imageUrl", letter.getImageUrl());
         data.put("senderProvince", letter.getSenderProvince());
@@ -399,8 +412,9 @@ public class FeigeLetterService {
     // ============================ 回信 ============================
 
     @Transactional
-    public Map<String, Object> reply(String openid, String content, String imageUrl,
-                                     String province, String city, BigDecimal lat, BigDecimal lng, String letterId) {
+    public Map<String, Object> reply(String openid, String title, String content, String imageUrl,
+                                     String province, String city, BigDecimal lat, BigDecimal lng,
+                                     String signature, String letterId) {
         FeigeLetter original = feigeLetterMapper.selectByLetterId(letterId);
         if (original == null) {
             return err(404, "原信件不存在", "LETTER_NOT_FOUND");
@@ -425,6 +439,8 @@ public class FeigeLetterService {
         reply.setSenderCity(city);
         reply.setSenderLat(lat);
         reply.setSenderLng(lng);
+        reply.setTitle(StringUtils.abbreviate(title, MAX_TITLE_LEN));
+        reply.setSignature(StringUtils.abbreviate(signature, MAX_SIGNATURE_LEN));
         reply.setContent(StringUtils.abbreviate(content, MAX_CONTENT_LEN));
         reply.setImageUrl(imageUrl);
         reply.setPigeonId(locked.getId());
@@ -444,8 +460,20 @@ public class FeigeLetterService {
         feigePigeonService.markSending(locked.getId());
 
         Map<String, Object> data = new HashMap<>();
+        // 兼容旧字段 newLetterId，新字段与 send 保持一致
+        data.put("letterId", reply.getLetterId());
         data.put("newLetterId", reply.getLetterId());
         data.put("shareToken", reply.getShareToken());
+        data.put("status", FeigeLetter.STATUS_FLYING_UNCLAIMED);
+        data.put("departureTime", formatDate(now));
+        data.put("claimExpireTime", formatDate(reply.getClaimExpireTime()));
+        data.put("serverTime", formatDate(now));
+        Map<String, Object> pigeonInfo = new HashMap<>();
+        pigeonInfo.put("name", locked.getName());
+        pigeonInfo.put("level", locked.getLevel());
+        pigeonInfo.put("speedKmh", locked.getSpeedKmh());
+        data.put("pigeon", pigeonInfo);
+        data.put("senderCity", joinCity(province, city));
         return ok(data);
     }
 
