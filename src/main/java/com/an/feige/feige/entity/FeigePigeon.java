@@ -15,6 +15,14 @@ public class FeigePigeon {
     public static final String STATUS_SENDING = "SENDING";
     public static final String STATUS_LOST = "LOST";
 
+    /** 六只首发角色（规格14.3）：统一177km/h，无属性强弱，独立履历。 */
+    public static final String ROLE_XIAOBAI = "XIAOBAI";
+    public static final String ROLE_PANGDUN = "PANGDUN";
+    public static final String ROLE_HUIHUI = "HUIHUI";
+    public static final String ROLE_ASHAN = "ASHAN";
+    public static final String ROLE_LAOYOUCHAI = "LAOYOUCHAI";
+    public static final String ROLE_HUALING = "HUALING";
+
     private Long id;
 
     private String openid;
@@ -42,6 +50,9 @@ public class FeigePigeon {
 
     /** 最远送信 km。 */
     private BigDecimal farthestDistance;
+
+    /** 角色: XIAOBAI/PANGDUN/HUIHUI/ASHAN/LAOYOUCHAI/HUALING（规格14.3）。 */
+    private String roleKey;
 
     private String status;
 
@@ -127,6 +138,14 @@ public class FeigePigeon {
 
     public void setFarthestDistance(BigDecimal farthestDistance) {
         this.farthestDistance = farthestDistance;
+    }
+
+    public String getRoleKey() {
+        return roleKey;
+    }
+
+    public void setRoleKey(String roleKey) {
+        this.roleKey = roleKey;
     }
 
     public String getStatus() {

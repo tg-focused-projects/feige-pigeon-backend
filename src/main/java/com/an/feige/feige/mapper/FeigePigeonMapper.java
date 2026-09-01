@@ -8,6 +8,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.util.Date;
+import java.util.List;
 
 /**
  * 飞鸽传书-用户鸽子 Mapper（注解式，不走 XML）。
@@ -18,14 +19,14 @@ public interface FeigePigeonMapper {
 
     String COLS = "id, openid, name, level, exp, speed_kmh AS speedKmh, stamina, "
             + "delivered_count AS deliveredCount, total_mileage AS totalMileage, "
-            + "farthest_distance AS farthestDistance, status, "
+            + "farthest_distance AS farthestDistance, role_key AS roleKey, status, "
             + "create_at AS createAt, update_at AS updateAt";
 
     @Insert("INSERT INTO feige_pigeon "
             + "(openid, name, level, exp, speed_kmh, stamina, delivered_count, total_mileage, "
-            + " farthest_distance, status, create_at, update_at) "
+            + " farthest_distance, role_key, status, create_at, update_at) "
             + "VALUES (#{openid}, #{name}, #{level}, #{exp}, #{speedKmh}, #{stamina}, #{deliveredCount}, "
-            + " #{totalMileage}, #{farthestDistance}, #{status}, #{createAt}, #{updateAt})")
+            + " #{totalMileage}, #{farthestDistance}, #{roleKey}, #{status}, #{createAt}, #{updateAt})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insertSelective(FeigePigeon record);
 
@@ -54,4 +55,16 @@ public interface FeigePigeonMapper {
             + "farthest_distance = #{farthestDistance}, status = #{status}, update_at = #{updateAt} "
             + "WHERE id = #{id}")
     int settleDelivery(FeigePigeon record);
+
+    /** 我的全部鸽子（鸽舍，规格16.3：一个主角+一排栖木）。 */
+    @Select("SELECT " + COLS + " FROM feige_pigeon WHERE openid = #{openid} ORDER BY id ASC")
+    List<FeigePigeon> selectListByOpenid(@Param("openid") String openid);
+
+    /** 按角色查鸽子（同一用户不能重复拥有同一角色，规格15.5）。 */
+    @Select("SELECT " + COLS + " FROM feige_pigeon WHERE openid = #{openid} AND role_key = #{roleKey} LIMIT 1")
+    FeigePigeon selectByOpenidAndRole(@Param("openid") String openid, @Param("roleKey") String roleKey);
+
+    /** 改名（首次送达后邀请，规格3.2）。 */
+    @Update("UPDATE feige_pigeon SET name = #{name}, update_at = #{updateAt} WHERE id = #{id}")
+    int rename(@Param("id") Long id, @Param("name") String name, @Param("updateAt") Date updateAt);
 }
