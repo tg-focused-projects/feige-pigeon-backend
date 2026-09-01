@@ -423,8 +423,10 @@ public class FeigeLetterService {
         } else if (!canView(letter, openid)) {
             return err(403, "无权限", "ACCESS_DENIED");
         }
-        if (FeigeLetter.STATUS_ARRIVED.equals(letter.getStatus())
-                || FeigeLetter.STATUS_DELIVERED.equals(letter.getStatus())) {
+        // 状态检查仅对 ARRIVAL 生效；REPLY_ARRIVAL 的原信此时通常已 DELIVERED（拆信后才可回信/订阅），跳过
+        if (!FeigeSubscription.TYPE_REPLY_ARRIVAL.equals(subType)
+                && (FeigeLetter.STATUS_ARRIVED.equals(letter.getStatus())
+                    || FeigeLetter.STATUS_DELIVERED.equals(letter.getStatus()))) {
             return ok(field("subscribed", false));
         }
         boolean ok = feigeSubscriptionService.subscribe(letter.getLetterId(), openid, subType);
