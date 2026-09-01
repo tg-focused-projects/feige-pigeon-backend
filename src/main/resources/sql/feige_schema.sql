@@ -81,6 +81,8 @@ CREATE TABLE IF NOT EXISTS `feige_letter` (
   `subscribed`             TINYINT      NOT NULL DEFAULT 0      COMMENT '是否订阅到达通知',
   `notified`               TINYINT      NOT NULL DEFAULT 0      COMMENT '是否已发到达通知',
   `read`                   TINYINT      NOT NULL DEFAULT 0      COMMENT '是否已拆信',
+  `thread_id`              VARCHAR(40)  DEFAULT NULL            COMMENT '往返会话ID(首信=自身,回信=原信thread)',
+  `reply_to_letter_id`     VARCHAR(40)  DEFAULT NULL            COMMENT '回信指向的原信件ID(首信为NULL)',
   `create_at`              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_at`              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
@@ -112,4 +114,8 @@ CREATE TABLE IF NOT EXISTS `feige_letter_event` (
 -- 已存在的库执行一次即可（幂等：列存在时跳过）：
 ALTER TABLE `feige_letter`
   ADD COLUMN `title` VARCHAR(64) DEFAULT NULL COMMENT '标题(≤64字,拆信后展示)' AFTER `recipient_lng`,
-  ADD COLUMN `signature` VARCHAR(64) DEFAULT NULL COMMENT '落款(≤64字,拆信后展示)' AFTER `title`;
+  ADD COLUMN `signature` VARCHAR(64) DEFAULT NULL COMMENT '落款(≤64字,拆信后展示)' AFTER `title`,
+  ADD COLUMN `thread_id` VARCHAR(40) DEFAULT NULL COMMENT '往返会话ID(首信=自身,回信=原信thread)' AFTER `read`,
+  ADD COLUMN `reply_to_letter_id` VARCHAR(40) DEFAULT NULL COMMENT '回信指向的原信件ID(首信为NULL)' AFTER `thread_id`;
+-- 存量首信回填 thread_id = letter_id（保证历史数据会话完整）
+UPDATE `feige_letter` SET `thread_id` = `letter_id` WHERE `thread_id` IS NULL AND `reply_to_letter_id` IS NULL;

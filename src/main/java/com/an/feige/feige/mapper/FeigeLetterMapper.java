@@ -33,18 +33,19 @@ public interface FeigeLetterMapper {
             + "settled, settled_at AS settledAt, settle_exp_delta AS settleExpDelta, "
             + "settle_level_before AS settleLevelBefore, settle_level_after AS settleLevelAfter, "
             + "settle_level_up AS settleLevelUp, "
-            + "subscribed, notified, `read`, create_at AS createAt, update_at AS updateAt";
+            + "subscribed, notified, `read`, thread_id AS threadId, reply_to_letter_id AS replyToLetterId, "
+            + "create_at AS createAt, update_at AS updateAt";
 
     @Insert("INSERT INTO feige_letter "
             + "(letter_id, share_token, sender_openid, sender_province, sender_city, sender_lat, sender_lng, "
             + " title, signature, content, image_url, pigeon_id, pigeon_name, speed_kmh, "
             + " departure_time, claim_expire_time, status, settled, subscribed, notified, `read`, "
-            + " create_at, update_at) "
+            + " thread_id, reply_to_letter_id, create_at, update_at) "
             + "VALUES (#{letterId}, #{shareToken}, #{senderOpenid}, #{senderProvince}, #{senderCity}, "
             + " #{senderLat}, #{senderLng}, #{title}, #{signature}, #{content}, #{imageUrl}, "
             + " #{pigeonId}, #{pigeonName}, #{speedKmh}, "
             + " #{departureTime}, #{claimExpireTime}, #{status}, #{settled}, #{subscribed}, #{notified}, "
-            + " #{read}, #{createAt}, #{updateAt})")
+            + " #{read}, #{threadId}, #{replyToLetterId}, #{createAt}, #{updateAt})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insertSelective(FeigeLetter record);
 
@@ -148,4 +149,19 @@ public interface FeigeLetterMapper {
 
     @Select("SELECT COUNT(*) FROM feige_letter WHERE sender_openid = #{openid}")
     int countSentByOpenid(@Param("openid") String openid);
+
+    /**
+     * 信箱-来信：收件人视角（含回信，recipient 已预绑定）。按状态优先级排序：
+     * 已抵达未接(ARRIVED) > 正在飞来(IN_FLIGHT) > 历史(DELIVERED/RECALLED/UNCLAIMED_EXPIRED)。
+     */
+    @Select("SELECT " + COLS + " FROM feige_letter WHERE recipient_openid = #{openid} "
+            + "ORDER BY CASE status WHEN 'ARRIVED' THEN 0 WHEN 'IN_FLIGHT' THEN 1 "
+            + "WHEN 'DELIVERED' THEN 2 WHEN 'RECALLED' THEN 3 ELSE 4 END, create_at DESC, id DESC "
+            + "LIMIT #{offset}, #{limit}")
+    List<FeigeLetter> selectInboxByOpenid(@Param("openid") String openid,
+                                          @Param("offset") int offset,
+                                          @Param("limit") int limit);
+
+    @Select("SELECT COUNT(*) FROM feige_letter WHERE recipient_openid = #{openid}")
+    int countInboxByOpenid(@Param("openid") String openid);
 }

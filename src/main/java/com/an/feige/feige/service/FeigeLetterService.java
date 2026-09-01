@@ -80,6 +80,7 @@ public class FeigeLetterService {
         FeigeLetter letter = new FeigeLetter();
         letter.setLetterId(newLetterId());
         letter.setShareToken(newShareToken());
+        letter.setThreadId(letter.getLetterId());
         letter.setSenderOpenid(openid);
         letter.setSenderProvince(province);
         letter.setSenderCity(city);
@@ -431,9 +432,23 @@ public class FeigeLetterService {
             return err(203, "鸽子正在送信，稍后再试", "PIGEON_BUSY");
         }
         Date now = new Date();
+        // 回信直达（规格 12.2）：计算航程、预绑定原发件人、直接 IN_FLIGHT，不经过认领/分享
+        BigDecimal distance = haversineKm(lat, lng,
+                original.getSenderLat(), original.getSenderLng());
+        BigDecimal speed = locked.getSpeedKmh() == null ? new BigDecimal("177.00") : locked.getSpeedKmh();
+        BigDecimal flightHours = distance.divide(speed, 2, RoundingMode.HALF_UP);
+        // 同城/近距离保底 5 分钟（与认领规则一致）
+        if (flightHours.compareTo(MIN_FLIGHT_HOURS) < 0) {
+            flightHours = MIN_FLIGHT_HOURS;
+        }
+        Date arrival = new Date(now.getTime() + hoursToMs(flightHours));
+
         FeigeLetter reply = new FeigeLetter();
         reply.setLetterId(newLetterId());
         reply.setShareToken(newShareToken());
+        // 往返关系：thread 沿用原信会话，reply_to 指向原信
+        reply.setThreadId(original.getThreadId() != null ? original.getThreadId() : original.getLetterId());
+        reply.setReplyToLetterId(original.getLetterId());
         reply.setSenderOpenid(openid);
         reply.setSenderProvince(province);
         reply.setSenderCity(city);
@@ -446,10 +461,17 @@ public class FeigeLetterService {
         reply.setPigeonId(locked.getId());
         reply.setPigeonName(locked.getName());
         reply.setSpeedKmh(locked.getSpeedKmh());
+        // 预绑定收件人 = 原发件人（含其出发城市坐标）
         reply.setRecipientOpenid(original.getSenderOpenid());
+        reply.setRecipientProvince(original.getSenderProvince());
+        reply.setRecipientCity(original.getSenderCity());
+        reply.setRecipientLat(original.getSenderLat());
+        reply.setRecipientLng(original.getSenderLng());
+        reply.setDistanceKm(distance);
+        reply.setFlightHours(flightHours);
+        reply.setArrivalTime(arrival);
         reply.setDepartureTime(now);
-        reply.setClaimExpireTime(new Date(now.getTime() + CLAIM_EXPIRE_HOURS * 3600_000L));
-        reply.setStatus(FeigeLetter.STATUS_FLYING_UNCLAIMED);
+        reply.setStatus(FeigeLetter.STATUS_IN_FLIGHT);
         reply.setSettled(0);
         reply.setSubscribed(0);
         reply.setNotified(0);
@@ -458,15 +480,19 @@ public class FeigeLetterService {
         reply.setUpdateAt(now);
         feigeLetterMapper.insertSelective(reply);
         feigePigeonService.markSending(locked.getId());
+        // 生成飞行日志（起飞/抵达确定性事件）
+        generateEvents(reply, now, arrival);
 
         Map<String, Object> data = new HashMap<>();
         // 兼容旧字段 newLetterId，新字段与 send 保持一致
         data.put("letterId", reply.getLetterId());
         data.put("newLetterId", reply.getLetterId());
         data.put("shareToken", reply.getShareToken());
-        data.put("status", FeigeLetter.STATUS_FLYING_UNCLAIMED);
+        data.put("status", FeigeLetter.STATUS_IN_FLIGHT);
         data.put("departureTime", formatDate(now));
-        data.put("claimExpireTime", formatDate(reply.getClaimExpireTime()));
+        data.put("arrivalTime", formatDate(arrival));
+        data.put("distanceKm", distance);
+        data.put("flightHours", flightHours);
         data.put("serverTime", formatDate(now));
         Map<String, Object> pigeonInfo = new HashMap<>();
         pigeonInfo.put("name", locked.getName());
@@ -474,6 +500,50 @@ public class FeigeLetterService {
         pigeonInfo.put("speedKmh", locked.getSpeedKmh());
         data.put("pigeon", pigeonInfo);
         data.put("senderCity", joinCity(province, city));
+        return ok(data);
+    }
+
+    // ============================ 信箱列表 ============================
+
+    /**
+     * 信箱列表：type=inbox 来信（收件人视角）/ type=sent 寄出（发件人视角）。
+     * 分页返回 {total, list:[...]}，列表项含往返关系（threadId/replyToLetterId）。
+     */
+    public Map<String, Object> listLetters(String openid, String type, int page, int size) {
+        int p = Math.max(0, page);
+        int s = Math.min(Math.max(1, size), 50);
+        int offset = p * s;
+        List<FeigeLetter> letters;
+        int total;
+        if ("sent".equalsIgnoreCase(type)) {
+            letters = feigeLetterMapper.selectSentByOpenid(openid, offset, s);
+            total = feigeLetterMapper.countSentByOpenid(openid);
+        } else {
+            letters = feigeLetterMapper.selectInboxByOpenid(openid, offset, s);
+            total = feigeLetterMapper.countInboxByOpenid(openid);
+        }
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (FeigeLetter letter : letters) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("letterId", letter.getLetterId());
+            item.put("shareToken", letter.getShareToken());
+            item.put("status", letter.getStatus());
+            item.put("title", letter.getTitle());
+            item.put("senderCity", joinCity(letter.getSenderProvince(), letter.getSenderCity()));
+            item.put("recipientCity", joinCity(letter.getRecipientProvince(), letter.getRecipientCity()));
+            item.put("departureTime", formatDate(letter.getDepartureTime()));
+            item.put("arrivalTime", formatDate(letter.getArrivalTime()));
+            item.put("createAt", formatDate(letter.getCreateAt()));
+            item.put("threadId", letter.getThreadId());
+            item.put("replyToLetterId", letter.getReplyToLetterId());
+            item.put("canRecall", isRecallable(letter));
+            items.add(item);
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("total", total);
+        data.put("page", p);
+        data.put("size", s);
+        data.put("list", items);
         return ok(data);
     }
 

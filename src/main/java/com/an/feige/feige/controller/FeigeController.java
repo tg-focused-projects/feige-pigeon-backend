@@ -161,6 +161,17 @@ public class FeigeController {
         return feigeLetterService.subscribe(letterId, openid);
     }
 
+    // -------------------- 信箱列表（来信/寄出） --------------------
+    @ApiOperation("信箱列表(来信/寄出)")
+    @GetMapping("/letter/list")
+    @ResponseBody
+    public Map<String, Object> letterList(@RequestParam(name = "openid", required = true) String openid,
+                                          @RequestParam(name = "type", required = false, defaultValue = "inbox") String type,
+                                          @RequestParam(name = "page", required = false, defaultValue = "0") int page,
+                                          @RequestParam(name = "size", required = false, defaultValue = "20") int size) {
+        return feigeLetterService.listLetters(openid, type, page, size);
+    }
+
     // -------------------- 我的鸽子 --------------------
     @ApiOperation("我的鸽子")
     @GetMapping("/pigeon/mine")

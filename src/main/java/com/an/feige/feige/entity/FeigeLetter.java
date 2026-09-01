@@ -121,6 +121,12 @@ public class FeigeLetter {
     /** 是否已拆信(0/1)。 */
     private Integer read;
 
+    /** 往返会话ID：首信=自身letterId，回信=原信threadId（规格12.3）。 */
+    private String threadId;
+
+    /** 回信指向的原信件ID（首信为null）。 */
+    private String replyToLetterId;
+
     private Date createAt;
 
     private Date updateAt;
@@ -419,6 +425,22 @@ public class FeigeLetter {
 
     public void setNotified(Integer notified) {
         this.notified = notified;
+    }
+
+    public String getThreadId() {
+        return threadId;
+    }
+
+    public void setThreadId(String threadId) {
+        this.threadId = threadId;
+    }
+
+    public String getReplyToLetterId() {
+        return replyToLetterId;
+    }
+
+    public void setReplyToLetterId(String replyToLetterId) {
+        this.replyToLetterId = replyToLetterId;
     }
 
     public Integer getRead() {
