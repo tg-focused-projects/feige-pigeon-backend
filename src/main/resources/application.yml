@@ -35,9 +35,9 @@ feige:
     appid: ${FG_WECHAT_APPID:}
     secret: ${FG_WECHAT_SECRET:}
     # 到达通知订阅消息模板 ID（空=不推送，仅记日志）
-    arrival-template-id: ${FG_ARRIVAL_TEMPLATE_ID:}
+    arrival-template-id: ${FG_ARRIVAL_TEMPLATE_ID:PM7gZ6hVG8yOXGtcjWdsid2vmB_rKyt_ZtZJ7PfIdo4}
     # 回信到达通知订阅消息模板 ID（空=不推送，仅记日志）
-    reply-arrival-template-id: ${FG_REPLY_ARRIVAL_TEMPLATE_ID:}
+    reply-arrival-template-id: ${FG_REPLY_ARRIVAL_TEMPLATE_ID:PM7gZ6hVG8yOXGtcjWdsid2vmB_rKyt_ZtZJ7PfIdo4}
     # 接口签名盐：sign = md5(openid + sign-secret)；本地默认值，上线需改
     sign-secret: ${FG_SIGN_SECRET:soogif-feige-dev-sign}
     # dev 模式登录兜底：true 时 jscode2session 用 jsCode 派生 openid，不调微信（本地联调用）

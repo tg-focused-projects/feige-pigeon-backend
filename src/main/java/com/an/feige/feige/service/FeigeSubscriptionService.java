@@ -32,7 +32,8 @@ import java.util.Map;
 public class FeigeSubscriptionService {
 
     private static final Logger log = LoggerFactory.getLogger(FeigeSubscriptionService.class);
-    private static final String DATE_PATTERN = "yyyy-MM-dd HH:mm:ss";
+    /** 微信订阅消息 time 字段格式（不带秒）。 */
+    private static final String DATE_PATTERN = "yyyy-MM-dd HH:mm";
 
     @Resource
     private FeigeSubscriptionMapper feigeSubscriptionMapper;
@@ -83,10 +84,29 @@ public class FeigeSubscriptionService {
     /**
      * 到达推送（抵达推进时调用）：推送给该信件 ARRIVAL 类型且未推送的订阅者。
      * 幂等：每个订阅 notified=0→1 才真正推送；模板未配置时静默跳过。
+     * 文案按订阅者角色区分（模板字段：thing1 昵称 / time2 时间 / thing3 通知事项 / thing4 温馨提醒）：
+     * 发件人「小白已经抵达收信城市·信已经送到」；收件人「一封给你的信已经抵达·小白正在等你」。
      */
     public void pushArrival(FeigeLetter letter) {
         push(letter, FeigeSubscription.TYPE_ARRIVAL, arrivalTemplateId,
-                "信鸽已抵达", "把这封信送到了你身边", "pages/feige/letter?id=" + letter.getLetterId());
+                "pages/feige/letter?id=" + letter.getLetterId(), (sub) -> {
+                    boolean isSender = letter.getSenderOpenid() != null
+                            && letter.getSenderOpenid().equals(sub.getOpenid());
+                    Map<String, Object> data = new HashMap<>();
+                    String pigeonName = StringUtils.defaultString(letter.getPigeonName(), "信鸽");
+                    data.put("thing1", valueOf(pigeonName));
+                    data.put("time2", valueOf(formatDate(letter.getArrivalTime())));
+                    if (isSender) {
+                        // 发件人（寄出方）：「小白已经抵达收信城市」「信已经送到，可以查看这次旅程了」
+                        data.put("thing3", valueOf(pigeonName + "已经抵达收信城市"));
+                        data.put("thing4", valueOf("信已经送到，可以查看这次旅程了"));
+                    } else {
+                        // 收件人（收信方）：「一封给你的信已经抵达」「小白正在等你，回来接过这封信吧」
+                        data.put("thing3", valueOf("一封给你的信已经抵达"));
+                        data.put("thing4", valueOf(pigeonName + "正在等你，回来接过这封信吧"));
+                    }
+                    return data;
+                });
     }
 
     /**
@@ -100,12 +120,20 @@ public class FeigeSubscriptionService {
         if (origin == null) {
             return;
         }
+        // 模板字段：thing1 昵称 / time2 时间 / thing3 通知事项 / thing4 温馨提醒
         push(origin, FeigeSubscription.TYPE_REPLY_ARRIVAL, replyArrivalTemplateId,
-                "有回信抵达", "有人给你回了一封信", "pages/feige/letter?id=" + letter.getLetterId());
+                "pages/feige/letter?id=" + letter.getLetterId(), (sub) -> {
+                    Map<String, Object> data = new HashMap<>();
+                    data.put("thing1", valueOf(StringUtils.defaultString(letter.getPigeonName(), "信鸽")));
+                    data.put("time2", valueOf(formatDate(letter.getArrivalTime())));
+                    data.put("thing3", valueOf("有人给你回了一封信"));
+                    data.put("thing4", valueOf("你的信鸽带着回信抵达了，来看看吧"));
+                    return data;
+                });
     }
 
-    private void push(FeigeLetter letter, String type, String templateId,
-                      String title, String desc, String page) {
+    private void push(FeigeLetter letter, String type, String templateId, String page,
+                      MessageBuilder messageBuilder) {
         // 模板未配置（上线前）：跳过推送但推进 notified，避免留下永不推送的僵尸订阅；
         // 模板接通后，对之后新抵达的信件正常推送。
         if (StringUtils.isBlank(templateId)) {
@@ -118,14 +146,16 @@ public class FeigeSubscriptionService {
             if (feigeSubscriptionMapper.markNotified(sub.getId(), new Date(), new Date()) <= 0) {
                 continue;
             }
-            Map<String, Object> data = new HashMap<>();
-            data.put("thing1", valueOf(title));
-            data.put("thing2", valueOf(letter.getPigeonName() + desc));
-            data.put("time10", valueOf(formatDate(letter.getArrivalTime())));
-            boolean ok = weChatClient.pushSubscribeMessage(sub.getOpenid(), page, data);
+            Map<String, Object> data = messageBuilder.build(sub);
+            boolean ok = weChatClient.pushSubscribeMessage(sub.getOpenid(), page, data, templateId);
             log.info("订阅推送 type={} openid={} letterId={} ok={}", type, sub.getOpenid(),
                     letter.getLetterId(), ok);
         }
+    }
+
+    /** 按订阅者生成推送模板数据（字段：thing1/time2/thing3/thing4）。 */
+    private interface MessageBuilder {
+        Map<String, Object> build(FeigeSubscription sub);
     }
 
     private String formatDate(Date date) {

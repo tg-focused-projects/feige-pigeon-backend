@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V3.0 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V3.1 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V3.0**（2026-09-01，对应 develop 合入 V1.1；含 V1.1：订阅模型/双端通知/投诉/多鸽/改名/履历）
+> 版本：**V3.1**（2026-09-01，V1.1 通知接通：订阅模板审核通过并适配字段/文案；含 V1.1 全部：订阅模型/双端通知/投诉/多鸽/改名/履历）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://test.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -21,6 +21,7 @@
 - **最短旅程**：飞行时长保底 5 分钟（同城/近距离不立即送达）。
 - 公开分享参数为 **`shareToken`**；正文/标题/落款/精确坐标仅拆信后返回。
 - **通知订阅（V3）**：按「信件+用户+类型」独立记录（feige_subscription 表），类型 `ARRIVAL`（当前鸽子抵达）/ `REPLY_ARRIVAL`（回信抵达）；替代信件级单字段 subscribed。
+- **订阅模板（V3 接通）**：`FG_ARRIVAL_TEMPLATE_ID` / `FG_REPLY_ARRIVAL_TEMPLATE_ID`（当前均为 `PM7gZ6hVG8yOXGtcjWdsid2vmB_rKyt_ZtZJ7PfIdo4`，可用环境变量覆盖）。模板字段：`thing1` 昵称 / `time2` 时间(`yyyy-MM-dd HH:mm`) / `thing3` 通知事项 / `thing4` 温馨提醒。文案按订阅者区分：发件人「{鸽子名}已经抵达收信城市·信已经送到，可以查看这次旅程了」；收件人「一封给你的信已经抵达·{鸽子名}正在等你，回来接过这封信吧」；回信到达「有人给你回了一封信·你的信鸽带着回信抵达了，来看看吧」。
 
 ### errorKey
 `INVALID_ARGUMENT` `INVALID_SIGNATURE` `LETTER_NOT_FOUND` `ALREADY_CLAIMED` `CLAIM_EXPIRED`
@@ -206,6 +207,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | V3.0 | 2026-09-01 | V1.1：订阅表 feige_subscription 双方独立订阅（ARRIVAL/REPLY_ARRIVAL）、订阅接口支持 type、飞行页返回订阅状态；投诉 POST /feige/report；多鸽体系 pigeon/role_key + PigeonRole 六角色、GET /pigeon/list、POST /pigeon/create、POST /pigeon/rename（首达后）、GET /pigeon/journeys（含去过城市）；回信到达通知模板配置 reply-arrival-template-id |
+| V3.1 | 2026-09-01 | V11-8 通知接通：订阅模板审核通过并适配（thing1/time2/thing3/thing4 字段，发件人/收件人区分文案）；WeChatClient 推送支持指定模板 ID；yml 默认填入模板 ID |
 | V2.0 | 2026-09-01 | 路径去 `/small-soogif`；send/bind/reply 改 JSON；新增 title/signature、isSendLetter、坐标兜底、5分钟保底、回信直达、往返字段、信箱列表；关闭等级/经验结算 |
 | V1.3 | 2026-08-27 | 旧版契约（路径含 /small-soogif，form 入参，无 V2 字段） |
 
