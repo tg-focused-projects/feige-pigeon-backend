@@ -63,9 +63,11 @@ public class FeigeSubscriptionService {
         if (letter == null) {
             return false;
         }
-        // 已抵达/已拆信的信件无需订阅（到达通知只在飞行中生效）
-        if (FeigeLetter.STATUS_ARRIVED.equals(letter.getStatus())
-                || FeigeLetter.STATUS_DELIVERED.equals(letter.getStatus())) {
+        // 已抵达/已拆信的信件无需订阅（到达通知只在飞行中生效）；
+        // 仅 ARRIVAL 受此限制——REPLY_ARRIVAL 的原信此时通常已 DELIVERED（拆信后才可回信/订阅）
+        if (!FeigeSubscription.TYPE_REPLY_ARRIVAL.equals(type)
+                && (FeigeLetter.STATUS_ARRIVED.equals(letter.getStatus())
+                    || FeigeLetter.STATUS_DELIVERED.equals(letter.getStatus()))) {
             return false;
         }
         feigeSubscriptionMapper.upsert(letterId, openid, type, new Date());
