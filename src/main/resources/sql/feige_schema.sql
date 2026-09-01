@@ -56,8 +56,6 @@ CREATE TABLE IF NOT EXISTS `feige_letter` (
   `recipient_city`         VARCHAR(64)  DEFAULT NULL            COMMENT '收件城市(认领后填)',
   `recipient_lat`          DECIMAL(14,8) DEFAULT NULL           COMMENT '收件纬度(认领后填)',
   `recipient_lng`          DECIMAL(14,8) DEFAULT NULL           COMMENT '收件经度',
-  `title`                  VARCHAR(64)  DEFAULT NULL            COMMENT '标题(≤64字,拆信后展示)',
-  `signature`              VARCHAR(64)  DEFAULT NULL            COMMENT '落款(≤64字,拆信后展示)',
   `content`                TEXT                                 COMMENT '正文(≤500字,拆信后才返回)',
   `image_url`              VARCHAR(255) DEFAULT NULL            COMMENT '配图',
   `pigeon_id`              BIGINT       DEFAULT NULL            COMMENT '送信鸽子',
@@ -107,9 +105,3 @@ CREATE TABLE IF NOT EXISTS `feige_letter_event` (
   UNIQUE KEY `uk_letter_seq` (`letter_id`, `seq`),
   KEY `idx_letter` (`letter_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='飞鸽传书-飞行日志';
-
--- ---------- 存量库升级（V2：标题/落款） ----------
--- 已存在的库执行一次即可（幂等：列存在时跳过）：
-ALTER TABLE `feige_letter`
-  ADD COLUMN `title` VARCHAR(64) DEFAULT NULL COMMENT '标题(≤64字,拆信后展示)' AFTER `recipient_lng`,
-  ADD COLUMN `signature` VARCHAR(64) DEFAULT NULL COMMENT '落款(≤64字,拆信后展示)' AFTER `title`;
