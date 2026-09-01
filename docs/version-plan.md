@@ -77,6 +77,41 @@
 3. **微信支付接入**（虚拟支付资格通过后：配置 FG_PAY_MCH_ID/API_KEY，回调验签，关闭 mock；A2）
 4. **价格确认**（A1 定稿后改 FG_PIGEON_PRICES 默认值）
 
+### 微信支付接入清单（资格通过后执行，供真实支付代码编写参考）
+
+#### 后端配置（测试机 env.conf / 生产环境变量）
+
+| 配置项 | 环境变量 | 说明 |
+|---|---|---|
+| 付费开关 | `FG_PIGEON_PAID_ENABLED=true` | `feige.pigeon.paid-enabled`；关闭时下单接口直接拒绝 |
+| 关闭模拟支付 | `FG_PAY_MOCK=false` | 必须关，否则支付确认仍是 mock 直接成功 |
+| 微信支付商户号 | `FG_PAY_MCH_ID=<商户号>` | 微信支付商户平台 mch_id |
+| 微信支付 API 密钥 | `FG_PAY_API_KEY=<API密钥>` | v3 用 APIv3 密钥（需商户证书：apiclient_cert.pem/apiclient_key.pem/平台证书）；v2 用 API 密钥 |
+| 槽位价格 | `FG_PIGEON_PRICES=0,100,300,600,1000,1500` | 单位分，对应第 2~6 槽位价格（A1 定稿后更新默认值） |
+
+#### 真实微信支付代码待办（当前为 mock 确认，需补两块）
+
+1. **下单接口**：调微信支付统一下单（JSAPI），入参 openid/商品=槽位/金额=slot 价格；
+   返回 `prepay_id` + 前端 `wx.requestPayment` 所需参数（timeStamp/nonceStr/package/paySign）；
+   订单状态 CREATED → 待支付。
+2. **支付回调接口**：`POST /feige/pay/notify`（微信服务器回调）：
+   验签（v3 用平台证书验签/解密，v2 用 md5 校验）→ 解析 out_trade_no=orderNo → 调 `confirmPaid(orderNo, transactionId)`（幂等：CREATED→PAID 仅一次，权益发放查重）→ 返回微信要求的成功应答（`{"code":"SUCCESS"}`，否则微信会重试）。
+
+#### 微信平台配置（开发平台/商户平台）
+
+| 平台 | 配置项 | 说明 |
+|---|---|---|
+| 微信支付商户平台 | AppID 绑定 | 产品中心 → AppID 账号管理 → 关联小程序 AppID（同主体） |
+| 微信支付商户平台 | JSAPI 支付目录 | 产品中心 → 开发配置 → 支付目录 `https://test.soogif.com/`（生产换正式域名） |
+| 微信支付商户平台 | 支付回调通知 URL | 指向 `/feige/pay/notify`（生产必须 https） |
+| 小程序后台 | request 合法域名 | 已配置（`https://test.soogif.com`），保持不变 |
+
+#### ⚠️ 上线前须知
+
+- **iOS 虚拟支付限制**：微信小程序虚拟支付 iOS 端不可用（苹果政策）；前端 iOS 隐藏购买入口或改「联系客服」引导，需产品决策。
+- **A1 价格确认**：默认 100/300/600/1000/1500 分（1/3/6/10/15 元），定稿后改 `FG_PIGEON_PRICES`。
+- **A7 退款规则**：代码已实现退款不删历史（REFUNDED）、旅程完成后再停用；最终以平台规则为准。
+
 ---
 
 ## 待外部确认项（不阻塞开发）
