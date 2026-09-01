@@ -4,10 +4,13 @@ import com.an.feige.common.CityGeoService;
 import com.an.feige.common.SignUtil;
 import com.an.feige.feige.dto.BindLetterRequest;
 import com.an.feige.feige.dto.ReplyLetterRequest;
+import com.an.feige.feige.dto.ReportRequest;
 import com.an.feige.feige.dto.SendLetterRequest;
 import com.an.feige.feige.entity.FeigePigeon;
+import com.an.feige.feige.entity.PigeonRole;
 import com.an.feige.feige.service.FeigeLetterService;
 import com.an.feige.feige.service.FeigePigeonService;
+import com.an.feige.feige.service.FeigeReportService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.apache.commons.lang3.StringUtils;
@@ -22,7 +25,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -42,6 +47,9 @@ public class FeigeController {
 
     @Autowired
     private FeigePigeonService feigePigeonService;
+
+    @Autowired
+    private FeigeReportService feigeReportService;
 
     @Autowired
     private SignUtil feigeSignUtil;
@@ -149,16 +157,17 @@ public class FeigeController {
     }
 
     // -------------------- 订阅到达通知 --------------------
-    @ApiOperation("订阅到达通知")
+    @ApiOperation("订阅到达通知(ARRIVAL当前鸽子抵达/REPLY_ARRIVAL回信抵达)")
     @PostMapping("/letter/subscribe")
     @ResponseBody
     public Map<String, Object> subscribe(@RequestParam(name = "openid", required = true) String openid,
                                          @RequestParam(name = "letterId", required = true) String letterId,
+                                         @RequestParam(name = "type", required = false) String type,
                                          HttpServletRequest request) {
         if (!sign(request, openid)) {
             return err(401, "非法请求", "INVALID_SIGNATURE");
         }
-        return feigeLetterService.subscribe(letterId, openid);
+        return feigeLetterService.subscribe(letterId, openid, type);
     }
 
     // -------------------- 信箱列表（来信/寄出） --------------------
@@ -170,6 +179,23 @@ public class FeigeController {
                                           @RequestParam(name = "page", required = false, defaultValue = "0") int page,
                                           @RequestParam(name = "size", required = false, defaultValue = "20") int size) {
         return feigeLetterService.listLetters(openid, type, page, size);
+    }
+
+    // -------------------- 内容投诉（规格17.1） --------------------
+    @ApiOperation("内容投诉")
+    @PostMapping("/report")
+    @ResponseBody
+    public Map<String, Object> report(@RequestBody ReportRequest req,
+                                      HttpServletRequest request) {
+        if (!sign(request, req.getOpenid())) {
+            return err(401, "非法请求", "INVALID_SIGNATURE");
+        }
+        Long reportId = feigeReportService.report(req.getLetterId(), req.getOpenid(),
+                req.getReason(), req.getDescription());
+        if (reportId == null) {
+            return err(400, "投诉参数错误", "INVALID_ARGUMENT");
+        }
+        return ok(field("reportId", reportId));
     }
 
     // -------------------- 我的鸽子 --------------------
@@ -191,6 +217,96 @@ public class FeigeController {
         data.put("status", pigeon.getStatus());
         data.put("motto", "它已经认识回家的路了。");
         return ok(data);
+    }
+
+    // -------------------- 鸽舍（多鸽，规格14.3/16.3） --------------------
+    @ApiOperation("鸽舍列表")
+    @GetMapping("/pigeon/list")
+    @ResponseBody
+    public Map<String, Object> pigeonList(@RequestParam(name = "openid", required = true) String openid) {
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (FeigePigeon pigeon : feigePigeonService.listByOpenid(openid)) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", pigeon.getId());
+            item.put("name", pigeon.getName());
+            item.put("roleKey", pigeon.getRoleKey());
+            item.put("level", pigeon.getLevel());
+            item.put("exp", pigeon.getExp());
+            item.put("speedKmh", pigeon.getSpeedKmh());
+            item.put("stamina", pigeon.getStamina());
+            item.put("deliveredCount", pigeon.getDeliveredCount());
+            item.put("totalMileage", pigeon.getTotalMileage());
+            item.put("farthestDistance", pigeon.getFarthestDistance());
+            item.put("status", pigeon.getStatus());
+            item.put("motto", PigeonRole.motto(pigeon.getRoleKey()));
+            list.add(item);
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("list", list);
+        data.put("total", list.size());
+        return ok(data);
+    }
+
+    @ApiOperation("创建角色鸽子")
+    @PostMapping("/pigeon/create")
+    @ResponseBody
+    public Map<String, Object> pigeonCreate(@RequestParam(name = "openid", required = true) String openid,
+                                            @RequestParam(name = "roleKey", required = true) String roleKey,
+                                            HttpServletRequest request) {
+        if (!sign(request, openid)) {
+            return err(401, "非法请求", "INVALID_SIGNATURE");
+        }
+        FeigePigeon pigeon = feigePigeonService.createByRole(openid, roleKey);
+        if (pigeon == null) {
+            return err(409, "角色不可用或已拥有", "ROLE_UNAVAILABLE");
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("id", pigeon.getId());
+        data.put("name", pigeon.getName());
+        data.put("roleKey", pigeon.getRoleKey());
+        data.put("status", pigeon.getStatus());
+        return ok(data);
+    }
+
+    @ApiOperation("鸽子改名")
+    @PostMapping("/pigeon/rename")
+    @ResponseBody
+    public Map<String, Object> pigeonRename(@RequestParam(name = "openid", required = true) String openid,
+                                            @RequestParam(name = "pigeonId", required = true) Long pigeonId,
+                                            @RequestParam(name = "name", required = true) String name,
+                                            HttpServletRequest request) {
+        if (!sign(request, openid)) {
+            return err(401, "非法请求", "INVALID_SIGNATURE");
+        }
+        FeigePigeon pigeon = feigePigeonService.getById(pigeonId);
+        if (pigeon == null || !openid.equals(pigeon.getOpenid())) {
+            return err(404, "鸽子不存在", "PIGEON_NOT_FOUND");
+        }
+        // 规格3.2：首次送达后才邀请改名；未送达过不允许
+        if (pigeon.getDeliveredCount() == null || pigeon.getDeliveredCount() <= 0) {
+            return err(403, "完成第一次旅程后才能改名", "RENAME_NOT_ALLOWED");
+        }
+        int rows = feigePigeonService.rename(pigeonId, name);
+        if (rows <= 0) {
+            return err(400, "名字不合法", "INVALID_ARGUMENT");
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("id", pigeonId);
+        data.put("name", name.trim().length() > 12 ? name.trim().substring(0, 12) : name.trim());
+        data.put("renamed", true);
+        return ok(data);
+    }
+
+    @ApiOperation("鸽子旅程履历")
+    @GetMapping("/pigeon/journeys")
+    @ResponseBody
+    public Map<String, Object> pigeonJourneys(@RequestParam(name = "openid", required = true) String openid,
+                                              @RequestParam(name = "pigeonId", required = true) Long pigeonId) {
+        FeigePigeon pigeon = feigePigeonService.getById(pigeonId);
+        if (pigeon == null || !openid.equals(pigeon.getOpenid())) {
+            return err(404, "鸽子不存在", "PIGEON_NOT_FOUND");
+        }
+        return feigePigeonService.journeys(pigeon);
     }
 
     // -------------------- 内部工具 --------------------
@@ -218,6 +334,12 @@ public class FeigeController {
         map.put("msg", msg);
         map.put("errorKey", errorKey);
         map.put("data", null);
+        return map;
+    }
+
+    private Map<String, Object> field(String key, Object value) {
+        Map<String, Object> map = new HashMap<>();
+        map.put(key, value);
         return map;
     }
 }
