@@ -19,20 +19,20 @@
 
 ## V1.0 收尾（当前，立即执行）
 
-### 缺陷修复（P0）
+### 缺陷修复（P0）—— ✅ 全部完成并部署验证（develop 88e1225）
 
-| # | 缺陷 | 说明 | 修复方案 |
+| # | 缺陷 | 说明 | 状态 |
 |---|---|---|---|
-| F1 | **回信永远无法抵达** | reply 未计算 distance/flight_hours/arrival_time，且 status=FLYING_UNCLAIMED 无认领流程 → ArrivalJob 永不推进 | 回信按规格 12.2 改为**直达**：计算回信距离（回信人位置 → 原发件人出发城市坐标）、flight_hours（含 5 分钟保底）、arrival_time、status=IN_FLIGHT、recipient=原发件人（已预绑定）；不做认领/分享 |
-| F2 | 回信 status 语义 | 规格 12.2「直接进入 IN_FLIGHT」 | 随 F1 一并修复（同一改动） |
+| F1 | **回信永远无法抵达** | reply 未计算 distance/flight_hours/arrival_time，且 status=FLYING_UNCLAIMED 无认领流程 → ArrivalJob 永不推进 | ✅ 已修复：回信直达（计算航程+5分钟保底+IN_FLIGHT+预绑定+飞行日志），测试机全链路验证（回信→到信→拆信）通过 |
+| F2 | 回信 status 语义 | 规格 12.2「直接进入 IN_FLIGHT」 | ✅ 随 F1 修复（status=IN_FLIGHT） |
 
-### 功能补齐（P0，信箱/往返必需）
+### 功能补齐（P0，信箱/往返必需）—— ✅ 全部完成并部署验证（develop 88e1225）
 
-| # | 功能 | 规格出处 | 说明 |
-|---|---|---|---|
-| V10-1 | **信箱列表接口** | 16.5 | `GET /feige/letter/list?type=inbox\|sent&openid=`：来信（已抵达未接>正在飞来>历史）、寄出（等待认领/飞行中/已抵达/已被收下/已召回/已过期） |
-| V10-2 | **往返信件关系字段** | 12.3 | feige_letter 增加 `thread_id`（往返会话）、`reply_to_letter_id`（回信指向原信）；回信时写入 |
-| V10-3 | 关闭等级/经验结算 | 14.1 | ✅ **已完成**（commit 487110d），待部署验证 |
+| # | 功能 | 规格出处 | 说明 | 状态 |
+|---|---|---|---|---|
+| V10-1 | **信箱列表接口** | 16.5 | `GET /feige/letter/list?type=inbox\|sent&openid=`：来信（已抵达未接>正在飞来>历史）、寄出（等待认领/飞行中/已抵达/已被收下/已召回/已过期） | ✅ 已上线，测试机验证（inbox 状态排序/往返关系返回） |
+| V10-2 | **往返信件关系字段** | 12.3 | feige_letter 增加 `thread_id`（往返会话）、`reply_to_letter_id`（回信指向原信）；回信时写入 | ✅ 已上线（DDL+回填+回信写入，测试机验证） |
+| V10-3 | 关闭等级/经验结算 | 14.1 | 只保留真实旅程数据累积（里程/送达次数），exp/level/speed 不再变更 | ✅ **已完成并部署验证**（commit 487110d 关闭结算 + 2bdfba4 修复 settleDelivery SQL；测试机确认 settled=1 且 exp/level 不再变更） |
 
 ### 已决议事项（记录在案）
 
@@ -80,13 +80,15 @@
 
 ---
 
-## 执行顺序（V1.0 收尾）
+## 执行顺序（V1.0 收尾）—— ✅ 已全部完成（develop 88e1225）
 
-1. **F1/F2 回信直达修复**（含 5 分钟保底、arrival_time 计算）→ 编译 → 部署测试服 → 全链路验证（发信→认领→到信→拆信→回信→回信抵达）
-2. **V10-2 往返关系字段**（thread_id/reply_to_letter_id）→ DDL + 实体 + 回信写入
-3. **V10-1 信箱列表接口** → inbox/sent 列表 + 前端联调
-4. **V10-3 关闭结算** → 随下次部署验证（代码已完成）
-5. 全部验证通过后：develop 合入 main → 生产基线
+1. ✅ **F1/F2 回信直达修复**（含 5 分钟保底、arrival_time 计算）→ 已部署测试服，全链路验证通过
+2. ✅ **V10-2 往返关系字段**（thread_id/reply_to_letter_id）→ DDL + 实体 + 回信写入
+3. ✅ **V10-1 信箱列表接口** → inbox/sent 列表，测试机验证通过
+4. ✅ **V10-3 关闭结算** → 已部署验证（含 settleDelivery SQL 修复）
+5. ⏳ **合入 main** → 由人工手动合并（不自动执行）
+
+> V1.0 收尾功能全部就绪，测试机运行 develop 88e1225。main 合并待人工操作。
 
 ---
 
