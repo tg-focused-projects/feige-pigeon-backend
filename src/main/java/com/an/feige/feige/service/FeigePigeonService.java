@@ -20,8 +20,6 @@ import java.util.Map;
 public class FeigePigeonService {
 
     private static final BigDecimal DEFAULT_SPEED = new BigDecimal("177.00");
-    private static final BigDecimal SPEED_STEP = new BigDecimal("3");
-    private static final BigDecimal EXP_RATIO = new BigDecimal("10");
 
     @Resource
     private FeigePigeonMapper feigePigeonMapper;
@@ -85,57 +83,17 @@ public class FeigePigeonService {
         update.setUpdateAt(new Date());
         update.setStatus(FeigePigeon.STATUS_IDLE);
 
-        int beforeLevel = pigeon.getLevel();
-        int deltaExp = distanceKm.divide(EXP_RATIO, 0, RoundingMode.FLOOR).intValue();
-        int exp = pigeon.getExp() + deltaExp;
-        int level = pigeon.getLevel();
-        BigDecimal speed = safe(pigeon.getSpeedKmh());
-        while (exp >= level * 100) {
-            exp -= level * 100;
-            level++;
-            speed = speed.add(SPEED_STEP);
-        }
-        update.setExp(exp);
-        update.setLevel(level);
-        update.setSpeedKmh(speed);
+        // V1 按产品规格 14.1：不计算/展示等级、经验、升级与提速，仅累积真实旅程数据
         feigePigeonMapper.settleDelivery(update);
 
         Map<String, Object> snap = new HashMap<>();
-        snap.put("deltaExp", deltaExp);
-        snap.put("beforeLevel", beforeLevel);
-        snap.put("afterLevel", level);
-        snap.put("afterExp", exp);
-        snap.put("afterSpeed", speed);
-        snap.put("levelUp", level > beforeLevel ? 1 : 0);
+        snap.put("deltaExp", 0);
+        snap.put("beforeLevel", 0);
+        snap.put("afterLevel", 0);
+        snap.put("afterExp", 0);
+        snap.put("afterSpeed", safe(pigeon.getSpeedKmh()));
+        snap.put("levelUp", 0);
         return snap;
-    }
-
-    /** 送达结算：累计/最远/里程，经验+距离/10，满足阈值升级提速，置回空闲。返回结算后的最新鸽子。 */
-    public FeigePigeon settleDelivery(FeigePigeon pigeon, BigDecimal distanceKm) {
-        FeigePigeon update = new FeigePigeon();
-        update.setId(pigeon.getId());
-        update.setDeliveredCount(pigeon.getDeliveredCount() + 1);
-        BigDecimal total = safe(pigeon.getTotalMileage()).add(distanceKm);
-        update.setTotalMileage(total);
-        update.setFarthestDistance(safe(pigeon.getFarthestDistance()).max(distanceKm));
-        update.setUpdateAt(new Date());
-        update.setStatus(FeigePigeon.STATUS_IDLE);
-
-        // 经验 & 升级
-        int deltaExp = distanceKm.divide(EXP_RATIO, 0, RoundingMode.FLOOR).intValue();
-        int exp = pigeon.getExp() + deltaExp;
-        int level = pigeon.getLevel();
-        BigDecimal speed = safe(pigeon.getSpeedKmh());
-        while (exp >= level * 100) {
-            exp -= level * 100;
-            level++;
-            speed = speed.add(SPEED_STEP);
-        }
-        update.setExp(exp);
-        update.setLevel(level);
-        update.setSpeedKmh(speed);
-        feigePigeonMapper.settleDelivery(update);
-        return getById(pigeon.getId());
     }
 
     private BigDecimal safe(BigDecimal value) {
