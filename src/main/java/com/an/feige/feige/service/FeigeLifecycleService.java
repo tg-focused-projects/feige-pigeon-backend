@@ -1,19 +1,15 @@
 package com.an.feige.feige.service;
 
-import com.an.feige.common.WeChatClient;
 import com.an.feige.feige.mapper.FeigeLetterMapper;
 import com.an.feige.feige.entity.FeigeLetter;
 import com.an.feige.feige.entity.FeigePigeon;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -33,11 +29,11 @@ public class FeigeLifecycleService {
     @Resource
     private FeigeLetterMapper feigeLetterMapper;
 
-    @Resource
-    private WeChatClient weChatClient;
-
     @Autowired
     private FeigePigeonService feigePigeonService;
+
+    @Autowired
+    private FeigeSubscriptionService feigeSubscriptionService;
 
     /** 抵达扫描：返回所有已到抵达时间的 IN_FLIGHT 信件 letterId。 */
     public List<String> selectDueArrival() {
@@ -96,10 +92,11 @@ public class FeigeLifecycleService {
         feigeLetterMapper.markArrivedAndSettle(letterId, deltaExp, beforeLevel, afterLevel, levelUp,
                 now, now, now);
 
-        if (letter.getSubscribed() != null && letter.getSubscribed() == 1) {
-            if (feigeLetterMapper.updateNotified(letterId, 1, new Date()) > 0) {
-                sendArrivalNotify(letter);
-            }
+        // 到达通知（规格13.1/13.2）：回信→原发件人订阅的回信到达通知；普通信→发件人+收件人独立订阅的到达通知
+        if (letter.getReplyToLetterId() != null) {
+            feigeSubscriptionService.pushReplyArrival(letter);
+        } else {
+            feigeSubscriptionService.pushArrival(letter);
         }
         return true;
     }
@@ -117,23 +114,4 @@ public class FeigeLifecycleService {
         return true;
     }
 
-    /** 小程序订阅消息：模板未配置时静默跳过，不阻塞业务。 */
-    private void sendArrivalNotify(FeigeLetter letter) {
-        Map<String, Object> data = new HashMap<>();
-        data.put("thing1", valueOf("信鸽已抵达"));
-        data.put("thing2", valueOf(letter.getPigeonName() + "把这封信送到了你身边"));
-        data.put("time10", valueOf(formatDate(letter.getArrivalTime())));
-        weChatClient.pushSubscribeMessage(letter.getRecipientOpenid(),
-                "pages/feige/letter?id=" + letter.getLetterId(), data);
-    }
-
-    private String formatDate(Date date) {
-        return date == null ? "" : new SimpleDateFormat(DATE_PATTERN).format(date);
-    }
-
-    private Map<String, Object> valueOf(String value) {
-        Map<String, Object> item = new HashMap<>();
-        item.put("value", value);
-        return item;
-    }
 }

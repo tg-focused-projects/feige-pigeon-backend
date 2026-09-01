@@ -1,12 +1,12 @@
-# 《飞鸽传书》独立后端 接口契约（V2.0 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V3.0 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V2.0**（2026-09-01，对应 develop `88e1225`；含 V1.0 收尾：回信直达/往返关系/信箱/关闭结算）
+> 版本：**V3.0**（2026-09-01，对应 develop 合入 V1.1；含 V1.1：订阅模型/双端通知/投诉/多鸽/改名/履历）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://test.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
 > 登录：自研 `WeChatClient`（jscode2session/订阅推送），不做 union 绑定
-> 签名：`sign = md5(openid + sign-secret)`；写操作（send/bind/recall/reply/subscribe）请求头带 `sign`
+> 签名：`sign = md5(openid + sign-secret)`；写操作（send/bind/recall/reply/subscribe/report/rename/create）请求头带 `sign`
 
 ---
 
@@ -16,15 +16,17 @@
 - 日期 `yyyy-MM-dd HH:mm:ss`（GMT+8）；JSON 用 FastJSON 序列化。
 - **身份**：登录换取 `openid` + `sign`；业务请求用登录返回的 openid（**dev 模式 openid 是派生值，非 jsCode 本身**）。
 - **路径**：业务接口前缀 `/feige`（**2026-09 起已去掉 `/small-soogif`**），登录 `/api/auth`。
-- **入参格式**：send / bind / reply 为 **JSON body**（`Content-Type: application/json`）；其余 GET/form。
+- **入参格式**：send / bind / reply / report 为 **JSON body**（`Content-Type: application/json`）；其余 GET/form。
 - **坐标规则**：`lat/lng` 可选；缺失时按 `province+city` 从内置行政区划坐标表（31省+341市）兜底；省市也无 → `INVALID_ARGUMENT`。
 - **最短旅程**：飞行时长保底 5 分钟（同城/近距离不立即送达）。
 - 公开分享参数为 **`shareToken`**；正文/标题/落款/精确坐标仅拆信后返回。
+- **通知订阅（V3）**：按「信件+用户+类型」独立记录（feige_subscription 表），类型 `ARRIVAL`（当前鸽子抵达）/ `REPLY_ARRIVAL`（回信抵达）；替代信件级单字段 subscribed。
 
 ### errorKey
 `INVALID_ARGUMENT` `INVALID_SIGNATURE` `LETTER_NOT_FOUND` `ALREADY_CLAIMED` `CLAIM_EXPIRED`
 `LETTER_RECALLED` `SENDER_CANNOT_CLAIM` `RECALL_TOO_EARLY` `RECALL_NOT_ALLOWED`
 `NOT_ARRIVED` `ACCESS_DENIED` `PIGEON_BUSY` `WECHAT_LOGIN_FAILED` `ACCOUNT_DISABLED` `USER_NOT_FOUND`
+`ROLE_UNAVAILABLE` `PIGEON_NOT_FOUND` `RENAME_NOT_ALLOWED`
 
 ---
 
@@ -65,6 +67,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 - 抵达即：`ARRIVED` + 鸽子 `IDLE` + 结算旅程数据（**V1 不结算等级/经验**，`settle*` 恒 0）。
 - 拆信：仅收件人 `read=1` 与 `ARRIVED→DELIVERED`；不结算成长。
 - 往返关系：`thread_id`（首信=自身，回信=原信 thread）、`reply_to_letter_id`（回信指向原信）。
+- **到达通知（V3）**：抵达时按订阅表推送——普通信 `ARRIVAL`（发件人+收件人分别订阅）；回信 `REPLY_ARRIVAL`（原发件人订阅）。推送幂等（每订阅 notified 独立），模板未配置时静默跳过。
 
 ---
 
@@ -101,6 +104,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 入参：`letterId* openid*`
 未认领：`{ status:FLYING_UNCLAIMED, departureTime, claimExpireTime, serverTime, progress:null, flownKm:null, remainKm:null, totalKm:null, arrivalTime:null, canRecall, subscribed, flightLog:[] }`
 已认领/回信：`{ status, departureTime, arrivalTime, serverTime, distanceKm, progress, flownKm, remainKm, totalKm, flightLog, subscribed }`
+**V3 新增字段**：`subscribedArrival`（是否订阅当前鸽子抵达）、`subscribedReplyArrival`（是否订阅回信抵达）；`subscribed` 兼容保留（=subscribedArrival）。
 错误：`LETTER_NOT_FOUND` `ACCESS_DENIED`
 
 ### `GET /feige/letter/detail` — 收信/拆信
@@ -118,10 +122,13 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 出参（**与 send 对齐**）：`{ letterId, newLetterId(兼容), shareToken, status:"IN_FLIGHT", departureTime, arrivalTime, distanceKm, flightHours, serverTime, pigeon:{name,level,speedKmh}, senderCity }`
 错误：`LETTER_NOT_FOUND` `NOT_ARRIVED` `ACCESS_DENIED` `PIGEON_BUSY` `INVALID_SIGNATURE`
 
-### `POST /feige/letter/subscribe` — 订阅到达通知（form）
-入参：`letterId* openid*`
-已抵达返回 `{ subscribed:false }`（无需订阅）；否则 `{ subscribed:true }`。
-错误：`LETTER_NOT_FOUND` `ACCESS_DENIED` `INVALID_SIGNATURE`
+### `POST /feige/letter/subscribe` — 订阅到达通知（form，**V3：支持类型**）
+入参：`letterId* openid* type?(ARRIVAL|REPLY_ARRIVAL，默认ARRIVAL)`
+- `ARRIVAL`：当前鸽子抵达（发件人/收件人分别授权，飞行页「到了叫我」）
+- `REPLY_ARRIVAL`：回信抵达（原发件人「有回信时告诉我」，仅回信可订阅）
+- 已抵达/已拆信返回 `{ subscribed:false }`（无需订阅）；否则 `{ subscribed:true, type }`。
+- 同信+同人+同类型重复订阅幂等（刷新订阅时间）。
+错误：`LETTER_NOT_FOUND` `ACCESS_DENIED` `INVALID_ARGUMENT` `INVALID_SIGNATURE`
 
 ### `GET /feige/letter/list` — 信箱列表（**V2 新增**）
 入参：`openid* type?(inbox|sent, 默认inbox) page?(默认0) size?(默认20, ≤50)`
@@ -130,16 +137,47 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 出参：`{ total, page, size, list:[{ letterId, shareToken, status, title, senderCity, recipientCity, departureTime, arrivalTime, createAt, threadId, replyToLetterId, canRecall }] }`
 错误：`INVALID_ARGUMENT`
 
+### `POST /feige/report` — 内容投诉（**V3 新增**，JSON body）
+入参：`{ letterId:"*", openid:"*"(投诉人), reason:"*", description:"?" }`
+`reason`：`INAPPROPRIATE`(不当内容) / `HARASSMENT`(骚扰诈骗) / `PRIVACY`(侵犯隐私) / `OTHER`(其他)；`description` ≤500字。
+出参：`{ reportId }`
+说明：记录 letter_id/reporter/reported_sender/reason/description/status(PENDING)，运营人工处理，不做自动封禁/拉黑（规格17.1）。
+错误：`INVALID_ARGUMENT` `LETTER_NOT_FOUND` `INVALID_SIGNATURE`
+
 ### `GET /feige/pigeon/mine` — 我的鸽子（无 sign）
 入参：`openid*`
 出参：`{ name, level, exp, expNext, speedKmh, stamina, deliveredCount, totalMileage, farthestDistance, status, motto }`
 （注：level/exp 保留字段恒为初始值——V1 不结算等级经验）
 
+### `GET /feige/pigeon/list` — 鸽舍列表（**V3 新增**，无 sign）
+入参：`openid*`
+首次进入自动获得小白（规格3.2）。
+出参：`{ total, list:[{ id, name, roleKey, level, exp, speedKmh, stamina, deliveredCount, totalMileage, farthestDistance, status, motto }] }`
+`roleKey`：`XIAOBAI`/`PANGDUN`/`HUIHUI`/`ASHAN`/`LAOYOUCHAI`/`HUALING`（规格14.3六角色）。
+
+### `POST /feige/pigeon/create` — 创建角色鸽子（**V3 新增**，form，需 sign）
+入参：`openid* roleKey*`
+规则：同一用户不能重复拥有同一角色；每用户最多6只（规格15.1）；V1.1 创建免费（V1.2 起第2~6只付费，PAID_PIGEON_ENABLED 开关）。
+出参：`{ id, name, roleKey, status:"IDLE" }`
+错误：`ROLE_UNAVAILABLE`（角色非法/已拥有/超上限）`INVALID_SIGNATURE`
+
+### `POST /feige/pigeon/rename` — 鸽子改名（**V3 新增**，form，需 sign）
+入参：`openid* pigeonId* name*`
+规则：仅首次送达后（deliveredCount≥1）可改名（规格3.2）；≤12字。
+出参：`{ id, name, renamed:true }`
+错误：`PIGEON_NOT_FOUND` `RENAME_NOT_ALLOWED` `INVALID_ARGUMENT` `INVALID_SIGNATURE`
+
+### `GET /feige/pigeon/journeys` — 鸽子旅程履历（**V3 新增**，无 sign）
+入参：`openid* pigeonId*`
+出参：`{ pigeonId, name, roleKey, deliveredCount, totalMileage, farthestDistance, cities:[去过去重城市], journeys:[{ letterId, status, senderCity, recipientCity, distanceKm, flightHours, departureTime, arrivalTime, reply }] }`
+说明：单次旅程履历含真实旅程数据（规格14.2）；城市足迹仅自己可见（规格17.3）。
+错误：`PIGEON_NOT_FOUND`
+
 ---
 
 ## 5. 定时任务（Quartz，每 1 分钟，Redis 分布式锁互斥）
 
-- `FeigeArrivalJob`：`IN_FLIGHT AND arrival_time<=now` → `ARRIVED` + 鸽子 `IDLE` + 旅程数据结算（无经验）+ 到达通知。
+- `FeigeArrivalJob`：`IN_FLIGHT AND arrival_time<=now` → `ARRIVED` + 鸽子 `IDLE` + 旅程数据结算（无经验）+ 到达通知（按订阅表）。
 - `FeigeUnclaimedExpireJob`：`FLYING_UNCLAIMED AND claim_expire_time<=now` → `UNCLAIMED_EXPIRED` + 鸽子 `IDLE`。
 - 多副本部署需 `FG_LOCK_ENABLED=true` + Redis（`FG_REDIS_HOST/PORT/PASSWORD`），锁 TTL 默认 30s（`FG_LOCK_TTL_SECONDS`）。
 
@@ -148,16 +186,18 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 ## 6. 数据表（新库 `feige_pigeon`）
 
 - `fg_user`：openid/session_key/nickname/face/mobile/app_type/status
-- `feige_pigeon`：openid/name/level/exp/speed_kmh/stamina/delivered_count/total_mileage/farthest_distance/status
-- `feige_letter`：letter_id/share_token/sender_*/recipient_*/title/signature/content/image_url/pigeon_id/pigeon_name/speed_kmh/distance_km/flight_hours/departure_time/arrival_time/claim_expire_time/claimed_at/recalled_at/expired_at/status/settled/settled_at/settle_*/subscribed/notified/read/**thread_id/reply_to_letter_id**/create_at/update_at
+- `feige_pigeon`：openid/name/level/exp/speed_kmh/stamina/delivered_count/total_mileage/farthest_distance/**role_key**/status；UNIQUE(openid, role_key)
+- `feige_letter`：letter_id/share_token/sender_*/recipient_*/title/signature/content/image_url/pigeon_id/pigeon_name/speed_kmh/distance_km/flight_hours/departure_time/arrival_time/claim_expire_time/claimed_at/recalled_at/expired_at/status/settled/settled_at/settle_*/subscribed/notified/read/thread_id/reply_to_letter_id/create_at/update_at
 - `feige_letter_event`：letter_id/seq/type/title/description/at_time；`UNIQUE(letter_id,seq)`
+- `feige_subscription`（**V3 新增**）：letter_id/openid/type(ARRIVAL|REPLY_ARRIVAL)/notified/notified_at/subscribed_at；`UNIQUE(letter_id,openid,type)`
+- `feige_report`（**V3 新增**）：letter_id/reporter_openid/reported_sender_openid/reason/description/status/created_at
 
-**存量升级**（已有库执行一次）：见 `feige_schema.sql` 尾部 ALTER（title/signature/thread_id/reply_to_letter_id + 首信 thread 回填）。
+**存量升级**（已有库执行一次）：见 `feige_schema.sql` 尾部 ALTER（title/signature/thread_id/reply_to_letter_id + 首信 thread 回填 + role_key/uk_openid_role）。
 
 ---
 
 ## 7. 并发/幂等
-原子认领(条件UPDATE)、召回vs认领(条件UPDATE互斥)、并发发送(`FOR UPDATE`+`markSending`)、单次结算(`settled=0`)、通知不重复(`notified=0`)、日志(`UNIQUE(letter_id,seq)`)、回信直达无认领竞争、定时任务 Redis 分布式锁（多副本互斥）。
+原子认领(条件UPDATE)、召回vs认领(条件UPDATE互斥)、并发发送(`FOR UPDATE`+`markSending`)、单次结算(`settled=0`)、通知不重复(`notified=0`)、日志(`UNIQUE(letter_id,seq)`)、回信直达无认领竞争、定时任务 Redis 分布式锁（多副本互斥）、订阅幂等(`UNIQUE(letter_id,openid,type)` upsert)、推送幂等(每订阅 notified 独立)。
 
 ---
 
@@ -165,5 +205,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V3.0 | 2026-09-01 | V1.1：订阅表 feige_subscription 双方独立订阅（ARRIVAL/REPLY_ARRIVAL）、订阅接口支持 type、飞行页返回订阅状态；投诉 POST /feige/report；多鸽体系 pigeon/role_key + PigeonRole 六角色、GET /pigeon/list、POST /pigeon/create、POST /pigeon/rename（首达后）、GET /pigeon/journeys（含去过城市）；回信到达通知模板配置 reply-arrival-template-id |
 | V2.0 | 2026-09-01 | 路径去 `/small-soogif`；send/bind/reply 改 JSON；新增 title/signature、isSendLetter、坐标兜底、5分钟保底、回信直达、往返字段、信箱列表；关闭等级/经验结算 |
 | V1.3 | 2026-08-27 | 旧版契约（路径含 /small-soogif，form 入参，无 V2 字段） |
+

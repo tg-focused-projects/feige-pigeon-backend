@@ -169,4 +169,16 @@ public interface FeigeLetterMapper {
 
     @Select("SELECT COUNT(*) FROM feige_letter WHERE recipient_openid = #{openid}")
     int countInboxByOpenid(@Param("openid") String openid);
+
+    /** 鸽子旅程履历（规格14.2）：该鸽子已认领/直达的全部旅程，按起飞倒序。 */
+    @Select("SELECT " + COLS + " FROM feige_letter WHERE pigeon_id = #{pigeonId} "
+            + "AND status IN ('IN_FLIGHT', 'ARRIVED', 'DELIVERED') "
+            + "ORDER BY departure_time DESC, id DESC")
+    List<FeigeLetter> selectJourneysByPigeon(@Param("pigeonId") Long pigeonId);
+
+    /** 鸽子去过城市（规格14.2/17.3：仅自己可见，不公开足迹）：收件城市去重。 */
+    @Select("SELECT DISTINCT recipient_city FROM feige_letter WHERE pigeon_id = #{pigeonId} "
+            + "AND recipient_city IS NOT NULL AND recipient_city <> '' "
+            + "AND status IN ('ARRIVED', 'DELIVERED') ORDER BY recipient_city ASC")
+    List<String> selectCitiesByPigeon(@Param("pigeonId") Long pigeonId);
 }
