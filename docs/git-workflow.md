@@ -61,15 +61,32 @@ git worktree remove worktrees/feige-fa-recall                  # 功能合并后
 - 同一分支不能同时被两个工作区检出（Git 会拒绝，天然防冲突）。
 - 主工作区建议长期停在 `main`，日常去 `develop`/feature 工作区干活。
 
-### 日常一图流
+### 日常一图流（固定迭代流程 v2，2026-09 起执行）
 
 ```
-feature worktree 编码 ──> 合入 develop ──> sh deploy/test.sh 部署测试服
-                                              │ 通过
-                              develop 合入 main ◄┘
-                                              │
-                                    main 打 tag 发生产
+① feature worktree 编码
+        │
+        ▼
+② 本地 worktree 启动服务测试（JDK8 mvn spring-boot:run / 打包本地跑，
+   自测通过才算"可合并"；DB 用本地库或测试库均可，Redis 本地起）
+        │ 通过
+        ▼
+③ 合入 develop（--no-ff 保留特性边界）并推送
+        │
+        ▼
+④ 发布服务器构建部署测试机（feige_git_release.sh develop）
+   —— 测试机全链路回归（发信→认领→到信→拆信→回信→信箱）
+        │ 通过
+        ▼
+⑤ develop 合入 main ◄──── 未通过回滚/修复重走 ①
+        │
+        ▼
+⑥ main 打 tag 发生产（Docker 镜像）
 ```
+
+> **铁律**：任何代码改动必须先过「本地 worktree 自测」再合并 develop；
+> 禁止直接改 develop/main 后跳过本地测试就推测试机（2026-09 曾因跳过
+> 本地测试 + 主工作区脏提交，导致 V2 源码被 docs 提交误删、测试机多轮返工）。
 
 ---
 
