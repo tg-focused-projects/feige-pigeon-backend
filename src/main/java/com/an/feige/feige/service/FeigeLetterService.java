@@ -471,6 +471,8 @@ public class FeigeLetterService {
         reply.setFlightHours(flightHours);
         reply.setArrivalTime(arrival);
         reply.setDepartureTime(now);
+        // 保留认领期字段(DB NOT NULL, 回信无人认领无实际意义, B5决议保留)
+        reply.setClaimExpireTime(new Date(now.getTime() + CLAIM_EXPIRE_HOURS * 3600_000L));
         reply.setStatus(FeigeLetter.STATUS_IN_FLIGHT);
         reply.setSettled(0);
         reply.setSubscribed(0);
