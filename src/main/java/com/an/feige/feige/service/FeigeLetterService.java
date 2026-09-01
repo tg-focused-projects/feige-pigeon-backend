@@ -148,6 +148,9 @@ public class FeigeLetterService {
         data.put("letterId", letter.getLetterId());
         data.put("senderProvince", letter.getSenderProvince());
         data.put("senderCity", letter.getSenderCity());
+        // 认领前可展示：发件落款 + 起飞时间（规格6.1；不泄露正文/精确位置/收件人信息）
+        data.put("senderSignature", letter.getSignature());
+        data.put("departureTime", formatDate(letter.getDepartureTime()));
         data.put("pigeonName", letter.getPigeonName());
         data.put("serverTime", formatDate(new Date()));
         return ok(data);
