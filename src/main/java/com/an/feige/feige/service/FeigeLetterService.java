@@ -6,6 +6,7 @@ import com.an.feige.feige.mapper.FeigePigeonMapper;
 import com.an.feige.feige.entity.FeigeLetter;
 import com.an.feige.feige.entity.FeigeLetterEvent;
 import com.an.feige.feige.entity.FeigePigeon;
+import com.an.feige.feige.entity.FeigeSubscription;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -57,6 +58,9 @@ public class FeigeLetterService {
 
     @Autowired
     private FeigeLifecycleService feigeLifecycleService;
+
+    @Autowired
+    private FeigeSubscriptionService feigeSubscriptionService;
 
     // ============================ 写信并放飞（发送即起飞） ============================
 
@@ -300,7 +304,10 @@ public class FeigeLetterService {
         data.put("status", letter.getStatus());
         data.put("departureTime", formatDate(letter.getDepartureTime()));
         data.put("serverTime", formatDate(new Date()));
-        data.put("subscribed", letter.getSubscribed() != null && letter.getSubscribed() == 1);
+        List<String> mySubTypes = feigeSubscriptionService.typesOf(letterId, openid);
+        data.put("subscribed", mySubTypes.contains(FeigeSubscription.TYPE_ARRIVAL));
+        data.put("subscribedArrival", mySubTypes.contains(FeigeSubscription.TYPE_ARRIVAL));
+        data.put("subscribedReplyArrival", mySubTypes.contains(FeigeSubscription.TYPE_REPLY_ARRIVAL));
 
         boolean canRecall = isRecallable(letter);
         data.put("canRecall", canRecall);
@@ -394,20 +401,39 @@ public class FeigeLetterService {
 
     // ============================ 订阅到达通知 ============================
 
-    public Map<String, Object> subscribe(String letterId, String openid) {
+    public Map<String, Object> subscribe(String letterId, String openid, String type) {
         FeigeLetter letter = feigeLetterMapper.selectByLetterId(letterId);
         if (letter == null) {
             return err(404, "信件不存在", "LETTER_NOT_FOUND");
         }
-        if (!canView(letter, openid)) {
+        String subType = StringUtils.defaultIfBlank(type, FeigeSubscription.TYPE_ARRIVAL);
+        // 回信到达订阅（规格13.2）：仅原发件人在【首信】上订阅「有回信时告诉我」；
+        // 回信抵达推送时向原信上订阅 REPLY_ARRIVAL 的用户推送。
+        if (FeigeSubscription.TYPE_REPLY_ARRIVAL.equals(subType)) {
+            if (letter.getReplyToLetterId() != null) {
+                // 传入的是回信本身 → 落到原信（原信=首信或 thread 首封）
+                letter = feigeLetterMapper.selectByLetterId(letter.getReplyToLetterId());
+                if (letter == null) {
+                    return err(404, "信件不存在", "LETTER_NOT_FOUND");
+                }
+            }
+            if (!openid.equals(letter.getSenderOpenid())) {
+                return err(403, "仅原发件人可订阅回信到达", "ACCESS_DENIED");
+            }
+        } else if (!canView(letter, openid)) {
             return err(403, "无权限", "ACCESS_DENIED");
         }
         if (FeigeLetter.STATUS_ARRIVED.equals(letter.getStatus())
                 || FeigeLetter.STATUS_DELIVERED.equals(letter.getStatus())) {
             return ok(field("subscribed", false));
         }
-        feigeLetterMapper.updateSubscribed(letterId, 1, new Date());
-        return ok(field("subscribed", true));
+        boolean ok = feigeSubscriptionService.subscribe(letter.getLetterId(), openid, subType);
+        if (!ok) {
+            return err(400, "订阅参数错误", "INVALID_ARGUMENT");
+        }
+        Map<String, Object> data = field("subscribed", true);
+        data.put("type", subType);
+        return ok(data);
     }
 
     // ============================ 回信 ============================
