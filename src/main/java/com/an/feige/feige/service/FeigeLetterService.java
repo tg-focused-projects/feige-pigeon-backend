@@ -36,6 +36,8 @@ public class FeigeLetterService {
     private static final BigDecimal EARTH_RADIUS_KM = new BigDecimal("6371.0");
     private static final int MAX_CONTENT_LEN = 500;
     private static final int MAX_TITLE_LEN = 64;
+    /** 最小飞行时长(小时)：同城/近距离在城市级坐标精度下避免立即送达，保底约5分钟 */
+    private static final BigDecimal MIN_FLIGHT_HOURS = new BigDecimal("0.0833");
     private static final int MAX_SIGNATURE_LEN = 64;
     private static final int CLAIM_EXPIRE_HOURS = 72;
     private static final long RECALL_GRACE_MS = 30L * 60 * 1000;
@@ -184,6 +186,10 @@ public class FeigeLetterService {
         BigDecimal distance = haversineKm(letter.getSenderLat(), letter.getSenderLng(), lat, lng);
         BigDecimal speed = letter.getSpeedKmh() == null ? new BigDecimal("177.00") : letter.getSpeedKmh();
         BigDecimal flightHours = distance.divide(speed, 2, RoundingMode.HALF_UP);
+        // 保底飞行时长：同城坐标精度下距离可能为0或极小，至少飞行约5分钟
+        if (flightHours.compareTo(MIN_FLIGHT_HOURS) < 0) {
+            flightHours = MIN_FLIGHT_HOURS;
+        }
         Date departure = letter.getDepartureTime();
         Date arrival = new Date(departure.getTime() + hoursToMs(flightHours));
 
