@@ -19,14 +19,15 @@ public interface FeigePigeonMapper {
 
     String COLS = "id, openid, name, level, exp, speed_kmh AS speedKmh, stamina, "
             + "delivered_count AS deliveredCount, total_mileage AS totalMileage, "
-            + "farthest_distance AS farthestDistance, role_key AS roleKey, status, "
+            + "farthest_distance AS farthestDistance, role_key AS roleKey, slot_index AS slotIndex, status, "
             + "create_at AS createAt, update_at AS updateAt";
+
 
     @Insert("INSERT INTO feige_pigeon "
             + "(openid, name, level, exp, speed_kmh, stamina, delivered_count, total_mileage, "
-            + " farthest_distance, role_key, status, create_at, update_at) "
+            + " farthest_distance, role_key, slot_index, status, create_at, update_at) "
             + "VALUES (#{openid}, #{name}, #{level}, #{exp}, #{speedKmh}, #{stamina}, #{deliveredCount}, "
-            + " #{totalMileage}, #{farthestDistance}, #{roleKey}, #{status}, #{createAt}, #{updateAt})")
+            + " #{totalMileage}, #{farthestDistance}, #{roleKey}, #{slotIndex}, #{status}, #{createAt}, #{updateAt})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insertSelective(FeigePigeon record);
 
@@ -67,4 +68,16 @@ public interface FeigePigeonMapper {
     /** 改名（首次送达后邀请，规格3.2）。 */
     @Update("UPDATE feige_pigeon SET name = #{name}, update_at = #{updateAt} WHERE id = #{id}")
     int rename(@Param("id") Long id, @Param("name") String name, @Param("updateAt") Date updateAt);
+
+    /** 按位置查鸽子（位置是否已被占用，规格15.5：空位置才能扩建）。 */
+    @Select("SELECT " + COLS + " FROM feige_pigeon WHERE openid = #{openid} AND slot_index = #{slotIndex} LIMIT 1")
+    FeigePigeon selectByOpenidAndSlot(@Param("openid") String openid, @Param("slotIndex") Integer slotIndex);
+
+    /** 鸽舍已占用的最小位置集合（分配最小空位用）。 */
+    @Select("SELECT slot_index FROM feige_pigeon WHERE openid = #{openid} ORDER BY slot_index ASC")
+    List<Integer> selectSlotIndexesByOpenid(@Param("openid") String openid);
+
+    /** 我的全部鸽子按位置排序（鸽舍展示）。 */
+    @Select("SELECT " + COLS + " FROM feige_pigeon WHERE openid = #{openid} ORDER BY slot_index ASC, id ASC")
+    List<FeigePigeon> selectListByOpenidOrderSlot(@Param("openid") String openid);
 }

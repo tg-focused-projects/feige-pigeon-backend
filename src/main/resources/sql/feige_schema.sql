@@ -34,11 +34,13 @@ CREATE TABLE IF NOT EXISTS `feige_pigeon` (
   `total_mileage`      DECIMAL(12,2) NOT NULL DEFAULT 0.00  COMMENT '累计飞行里程 km',
   `farthest_distance`  DECIMAL(12,2) NOT NULL DEFAULT 0.00  COMMENT '最远送信 km',
   `role_key`           VARCHAR(24)  NOT NULL DEFAULT 'XIAOBAI' COMMENT '角色: XIAOBAI/PANGDUN/HUIHUI/ASHAN/LAOYOUCHAI/HUALING',
+  `slot_index`         INT          NOT NULL DEFAULT 1      COMMENT '鸽舍位置序号(1~6; 位置1免费小白, 2~6付费; 价格绑位置,规格15.3)',
   `status`             VARCHAR(16)  NOT NULL DEFAULT 'IDLE' COMMENT 'IDLE/SENDING/LOST',
   `create_at`          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_at`          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_openid_role` (`openid`, `role_key`),
+  UNIQUE KEY `uk_openid_slot` (`openid`, `slot_index`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='飞鸽传书-用户鸽子';
 
@@ -162,6 +164,17 @@ ALTER TABLE `feige_pigeon`
 -- 存量库若仍存在单 openid 唯一键，先删除再建组合唯一键（幂等：键不存在时跳过）
 -- DROP INDEX `uk_openid` ON `feige_pigeon`;
 ALTER TABLE `feige_pigeon` ADD UNIQUE KEY `uk_openid_role` (`openid`, `role_key`);
+-- V4.2：鸽子落位置（价格绑定位置，规格15.3）；存量回填：小白=1，其余角色按 id 顺序从 2 起
+ALTER TABLE `feige_pigeon`
+  ADD COLUMN `slot_index` INT NOT NULL DEFAULT 1 COMMENT '鸽舍位置序号(1~6)' AFTER `role_key`;
+ALTER TABLE `feige_pigeon` ADD UNIQUE KEY `uk_openid_slot` (`openid`, `slot_index`);
+-- 回填：XIAOBAI 已默认 1；其余角色按（同一用户内 id 升序）占 2..N（存量每用户 ≤5 只非小白时正确）
+UPDATE `feige_pigeon` p JOIN (
+  SELECT id, @rn := IF(@cur = openid, @rn + 1, 1) AS rn, @cur := openid
+  FROM feige_pigeon, (SELECT @rn := 0, @cur := '') vars
+  WHERE role_key <> 'XIAOBAI' AND openid <> ''
+  ORDER BY openid, id
+) t ON p.id = t.id SET p.slot_index = t.rn + 1 WHERE p.role_key <> 'XIAOBAI';
 
 -- ---------- 订单（V4：多鸽付费购买，规格15） ----------
 -- 支付资格申请中（A2）：开关 PAID_PIGEON_ENABLED 控制；凭证未配时走 mock 支付确认（仅测试）
