@@ -326,18 +326,19 @@ public class FeigeController {
         return ok(feigePayService.slots(openid));
     }
 
-    @ApiOperation("创建购买订单")
+    @ApiOperation("创建购买订单(购买空位置+选择角色入住)")
     @PostMapping("/pigeon/order")
     @ResponseBody
     public Map<String, Object> pigeonOrder(@RequestParam(name = "openid", required = true) String openid,
+                                           @RequestParam(name = "slotIndex", required = true) Integer slotIndex,
                                            @RequestParam(name = "roleKey", required = true) String roleKey,
                                            HttpServletRequest request) {
         if (!sign(request, openid)) {
             return err(401, "非法请求", "INVALID_SIGNATURE");
         }
-        Map<String, Object> order = feigePayService.createOrder(openid, roleKey);
+        Map<String, Object> order = feigePayService.createOrder(openid, slotIndex, roleKey);
         if (order == null) {
-            return err(409, "下单失败：开关关闭/角色非法/已拥有", "ORDER_CREATE_FAILED");
+            return err(409, "下单失败：开关关闭/位置不可售/角色已拥有/位置已占用", "ORDER_CREATE_FAILED");
         }
         return ok(order);
     }

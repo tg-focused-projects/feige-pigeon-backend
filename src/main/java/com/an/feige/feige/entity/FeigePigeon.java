@@ -54,6 +54,9 @@ public class FeigePigeon {
     /** 角色: XIAOBAI/PANGDUN/HUIHUI/ASHAN/LAOYOUCHAI/HUALING（规格14.3）。 */
     private String roleKey;
 
+    /** 鸽舍位置序号（1~6；价格绑定位置，规格15.3）。 */
+    private Integer slotIndex;
+
     private String status;
 
     private Date createAt;
@@ -146,6 +149,14 @@ public class FeigePigeon {
 
     public void setRoleKey(String roleKey) {
         this.roleKey = roleKey;
+    }
+
+    public Integer getSlotIndex() {
+        return slotIndex;
+    }
+
+    public void setSlotIndex(Integer slotIndex) {
+        this.slotIndex = slotIndex;
     }
 
     public String getStatus() {

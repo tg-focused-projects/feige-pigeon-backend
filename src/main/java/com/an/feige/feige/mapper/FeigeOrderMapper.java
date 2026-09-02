@@ -35,6 +35,11 @@ public interface FeigeOrderMapper {
             + "ORDER BY id DESC LIMIT 1")
     FeigeOrder selectLatestByOpenidAndRole(@Param("openid") String openid, @Param("roleKey") String roleKey);
 
+    /** 用户某位置的最近一笔订单（防止同一位置重复下单）。 */
+    @Select("SELECT " + COLS + " FROM feige_order WHERE openid = #{openid} AND slot_index = #{slotIndex} "
+            + "ORDER BY id DESC LIMIT 1")
+    FeigeOrder selectLatestByOpenidAndSlot(@Param("openid") String openid, @Param("slotIndex") Integer slotIndex);
+
     /** 支付确认（幂等：仅 CREATED 可置 PAID，重复回调不生效）。 */
     @Update("UPDATE feige_order SET status = 'PAID', pay_trade_no = #{payTradeNo}, pay_time = #{payTime}, update_at = #{updateAt} "
             + "WHERE order_no = #{orderNo} AND status = 'CREATED'")
