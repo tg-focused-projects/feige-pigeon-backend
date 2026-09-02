@@ -326,12 +326,13 @@ public class FeigeController {
         return ok(feigePayService.slots(openid));
     }
 
-    @ApiOperation("创建购买订单(购买空位置+选择角色入住)")
+    @ApiOperation("创建购买订单(购买空位置+选择角色入住; 返回 payData 供 wx.requestVirtualPayment)")
     @PostMapping("/pigeon/order")
     @ResponseBody
     public Map<String, Object> pigeonOrder(@RequestParam(name = "openid", required = true) String openid,
                                            @RequestParam(name = "slotIndex", required = true) Integer slotIndex,
                                            @RequestParam(name = "roleKey", required = true) String roleKey,
+                                           @RequestParam(name = "session_key", required = false) String sessionKey,
                                            HttpServletRequest request) {
         if (!sign(request, openid)) {
             return err(401, "非法请求", "INVALID_SIGNATURE");
@@ -339,6 +340,14 @@ public class FeigeController {
         Map<String, Object> order = feigePayService.createOrder(openid, slotIndex, roleKey);
         if (order == null) {
             return err(409, "下单失败：开关关闭/位置不可售/角色已拥有/位置已占用", "ORDER_CREATE_FAILED");
+        }
+        // 真实虚拟支付：补用户态签名 signature（需要当次有效 session_key；前端 wx.login 后调用下单时传入）
+        if (order.get("payData") != null && StringUtils.isNotBlank(sessionKey)) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> payData = (Map<String, Object>) order.get("payData");
+            String signData = String.valueOf(payData.get("signData"));
+            payData.put("signature",
+                    org.apache.commons.codec.digest.HmacUtils.hmacSha256Hex(sessionKey, signData));
         }
         return ok(order);
     }
@@ -353,6 +362,10 @@ public class FeigeController {
         if (!sign(request, openid)) {
             return err(401, "非法请求", "INVALID_SIGNATURE");
         }
+        // 真实虚拟支付已配置：支付确认只允许微信推送/查单兜底触发，前端 confirm 直接拒绝（防绕过支付）
+        if (feigePayService.xpayConfigured()) {
+            return err(409, "真实支付模式已开启，请走微信支付", "REAL_PAY_ENABLED");
+        }
         FeigeOrder order = feigePayService.getOrder(orderNo);
         if (order == null || !openid.equals(order.getOpenid())) {
             return err(404, "订单不存在", "ORDER_NOT_FOUND");
@@ -365,10 +378,14 @@ public class FeigeController {
         return ok(result);
     }
 
-    @ApiOperation("微信支付回调(服务端对服务端)")
+    @ApiOperation("支付确认回调(旧mock JSON回调；真实支付请用 /feige/pay/notify xpay 推送)")
     @PostMapping("/pay/callback")
     @ResponseBody
     public Map<String, Object> payCallback(@RequestBody Map<String, Object> body) {
+        // 真实虚拟支付已配置：此旧回调不再作为支付确认入口（改用 /feige/pay/notify 发货推送）
+        if (feigePayService.xpayConfigured()) {
+            return err(409, "真实支付模式已开启，支付确认走发货推送", "REAL_PAY_ENABLED");
+        }
         // 微信支付回调（资格开通后接入验签；当前 mock 模式直接按 orderNo 确认）
         String orderNo = body == null ? null : String.valueOf(body.get("orderNo"));
         String payTradeNo = body == null ? null : String.valueOf(body.get("payTradeNo"));
@@ -387,6 +404,19 @@ public class FeigeController {
     @ResponseBody
     public Map<String, Object> pigeonOrders(@RequestParam(name = "openid", required = true) String openid) {
         return ok(feigePayService.ordersOf(openid));
+    }
+
+    @ApiOperation("订单状态查询(前端支付结果轮询)")
+    @GetMapping("/order/status")
+    @ResponseBody
+    public Map<String, Object> orderStatus(@RequestParam(name = "orderNo", required = true) String orderNo,
+                                           @RequestParam(name = "openid", required = true) String openid) {
+        FeigeOrder order = feigePayService.getOrder(orderNo);
+        if (order == null || !openid.equals(order.getOpenid())) {
+            return err(404, "订单不存在", "ORDER_NOT_FOUND");
+        }
+        Map<String, Object> result = feigePayService.orderStatus(orderNo);
+        return ok(result);
     }
 
     // -------------------- 七牛上传凭证 --------------------

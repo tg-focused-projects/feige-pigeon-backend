@@ -18,6 +18,7 @@ target/
 deploy/*.local.conf
 deploy/tools/*.local
 *.local.env
+deploy/env.conf
 
 # 日志
 *.log

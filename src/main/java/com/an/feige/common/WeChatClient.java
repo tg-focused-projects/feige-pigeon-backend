@@ -132,6 +132,37 @@ public class WeChatClient {
         return token;
     }
 
+    /**
+     * 获取小程序 access_token（带进程内 100s 缓存；多实例部署建议后续改为 Redis）。
+     * 虚拟支付服务端接口（/xpay/*）依赖该 token。
+     */
+    public String accessToken() {
+        long now = System.currentTimeMillis();
+        if (cachedToken != null && now - cachedAt < ACCESS_TOKEN_TTL_MS) {
+            return cachedToken;
+        }
+        synchronized (this) {
+            if (cachedToken != null && now - cachedAt < ACCESS_TOKEN_TTL_MS) {
+                return cachedToken;
+            }
+            try {
+                String token = getAccessToken();
+                if (StringUtils.isNotBlank(token)) {
+                    cachedToken = token;
+                    cachedAt = now;
+                }
+                return token;
+            } catch (Exception e) {
+                log.warn("获取 access_token 异常(将用缓存/下次重试)", e);
+                return cachedToken;
+            }
+        }
+    }
+
+    private static final long ACCESS_TOKEN_TTL_MS = 100 * 1000L;
+    private volatile String cachedToken;
+    private volatile long cachedAt;
+
     private String httpGet(String url) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setConnectTimeout(TIMEOUT);
