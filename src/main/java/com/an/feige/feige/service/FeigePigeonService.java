@@ -53,6 +53,7 @@ public class FeigePigeonService {
         fresh.setOpenid(openid);
         fresh.setName(PigeonRole.defaultName(FeigePigeon.ROLE_XIAOBAI));
         fresh.setRoleKey(FeigePigeon.ROLE_XIAOBAI);
+        fresh.setSlotIndex(1);
         fresh.setLevel(1);
         fresh.setExp(0);
         fresh.setSpeedKmh(DEFAULT_SPEED);
@@ -63,7 +64,16 @@ public class FeigePigeonService {
         fresh.setStatus(FeigePigeon.STATUS_IDLE);
         fresh.setCreateAt(now);
         fresh.setUpdateAt(now);
-        feigePigeonMapper.insertSelective(fresh);
+        try {
+            feigePigeonMapper.insertSelective(fresh);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 并发初始化：另一请求已建小白，幂等返回既有记录
+            FeigePigeon exists = feigePigeonMapper.selectByOpenidAndRole(openid, FeigePigeon.ROLE_XIAOBAI);
+            if (exists != null) {
+                return exists;
+            }
+            throw e;
+        }
         return fresh;
     }
 
@@ -78,6 +88,11 @@ public class FeigePigeonService {
     /** 按角色查用户鸽子（V1.2 权益/重复购买判断）。 */
     public FeigePigeon getByOpenidAndRole(String openid, String roleKey) {
         return feigePigeonMapper.selectByOpenidAndRole(openid, roleKey);
+    }
+
+    /** 按位置查用户鸽子（V1.2 槽位模型：该位置是否已入住）。 */
+    public FeigePigeon getByOpenidAndSlot(String openid, Integer slotIndex) {
+        return slotIndex == null ? null : feigePigeonMapper.selectByOpenidAndSlot(openid, slotIndex);
     }
 
     /** 置鸽子为送信中；返回是否成功（空闲才能放飞）。 */
@@ -114,50 +129,66 @@ public class FeigePigeonService {
             log.warn("付费开关开启，拒绝直接创建鸽子 openid={} roleKey={}", openid, roleKey);
             return null;
         }
+        // 先确保小白存在并占 slot 1（免费创建的角色从 slot 2 起分配）
+        getOrInitByOpenid(openid);
         if (feigePigeonMapper.selectByOpenidAndRole(openid, roleKey) != null) {
             return null;
         }
         if (feigePigeonMapper.selectListByOpenid(openid).size() >= MAX_PIGEONS) {
             return null;
         }
-        Date now = new Date();
-        FeigePigeon fresh = new FeigePigeon();
-        fresh.setOpenid(openid);
-        fresh.setName(PigeonRole.defaultName(roleKey));
-        fresh.setRoleKey(roleKey);
-        fresh.setLevel(1);
-        fresh.setExp(0);
-        fresh.setSpeedKmh(DEFAULT_SPEED);
-        fresh.setStamina(3);
-        fresh.setDeliveredCount(0);
-        fresh.setTotalMileage(BigDecimal.ZERO);
-        fresh.setFarthestDistance(BigDecimal.ZERO);
-        fresh.setStatus(FeigePigeon.STATUS_IDLE);
-        fresh.setCreateAt(now);
-        fresh.setUpdateAt(now);
-        feigePigeonMapper.insertSelective(fresh);
-        return fresh;
+        // 自动分配最小空位（开关关闭=免费扩建路径；slot 1 已被小白占，从 2 起）
+        Integer slot = nextFreeSlot(openid);
+        if (slot == null) {
+            return null;
+        }
+        return insertPigeon(openid, roleKey, slot);
     }
 
     /**
      * 支付权益发放专用创建（规格15.5）：仅支付确认路径调用，不受 paid-enabled 开关拦截。
-     * 幂等：已拥有/超上限返回 null。
+     * 在指定位置入住（购买哪个位置就住哪个位置，价格绑定位置）。
+     * 幂等：已拥有/该位置已占用/超上限返回 null。
      */
-    public FeigePigeon grantByRole(String openid, String roleKey) {
+    public FeigePigeon grantByRole(String openid, String roleKey, Integer slotIndex) {
         if (!PigeonRole.isValid(roleKey)) {
             return null;
         }
+        // 先确保小白存在并占 slot 1（用户可能先直接支付购买，尚未初始化小白）
+        getOrInitByOpenid(openid);
         if (feigePigeonMapper.selectByOpenidAndRole(openid, roleKey) != null) {
+            return null;
+        }
+        if (slotIndex == null || slotIndex <= 1 || slotIndex > MAX_PIGEONS) {
+            return null;
+        }
+        if (feigePigeonMapper.selectByOpenidAndSlot(openid, slotIndex) != null) {
             return null;
         }
         if (feigePigeonMapper.selectListByOpenid(openid).size() >= MAX_PIGEONS) {
             return null;
         }
+        return insertPigeon(openid, roleKey, slotIndex);
+    }
+
+    /** 该用户鸽舍最小的空闲位置（1~6），满员返回 null。 */
+    private Integer nextFreeSlot(String openid) {
+        List<Integer> used = feigePigeonMapper.selectSlotIndexesByOpenid(openid);
+        for (int i = 1; i <= MAX_PIGEONS; i++) {
+            if (!used.contains(i)) {
+                return i;
+            }
+        }
+        return null;
+    }
+
+    private FeigePigeon insertPigeon(String openid, String roleKey, Integer slotIndex) {
         Date now = new Date();
         FeigePigeon fresh = new FeigePigeon();
         fresh.setOpenid(openid);
         fresh.setName(PigeonRole.defaultName(roleKey));
         fresh.setRoleKey(roleKey);
+        fresh.setSlotIndex(slotIndex);
         fresh.setLevel(1);
         fresh.setExp(0);
         fresh.setSpeedKmh(DEFAULT_SPEED);
@@ -168,7 +199,13 @@ public class FeigePigeonService {
         fresh.setStatus(FeigePigeon.STATUS_IDLE);
         fresh.setCreateAt(now);
         fresh.setUpdateAt(now);
-        feigePigeonMapper.insertSelective(fresh);
+        try {
+            feigePigeonMapper.insertSelective(fresh);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 并发：同角色或同位置已被占用，视为失败（调用方按已占用处理）
+            log.warn("鸽子创建唯一键冲突 openid={} roleKey={} slot={}", openid, roleKey, slotIndex);
+            return null;
+        }
         return fresh;
     }
 

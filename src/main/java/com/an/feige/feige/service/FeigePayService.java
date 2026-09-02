@@ -60,76 +60,99 @@ public class FeigePayService {
      * @return { slots:[{ index, roleKey|null, name, status, amountFen, paid }], freeCount, maxSlots }
      */
     public Map<String, Object> slots(String openid) {
+        // 物理 6 位置（规格15.1/15.3：价格绑定位置，不绑定角色）
         List<FeigePigeon> owned = feigePigeonService.listByOpenid(openid);
+        Map<Integer, FeigePigeon> ownedBySlot = new HashMap<>();
         Map<String, FeigePigeon> ownedByRole = new HashMap<>();
         for (FeigePigeon p : owned) {
+            ownedBySlot.put(p.getSlotIndex() == null ? 0 : p.getSlotIndex(), p);
             ownedByRole.put(p.getRoleKey(), p);
         }
 
-        List<Map<String, Object>> slots = new ArrayList<>();
         int[] prices = parsePrices();
-        Map<String, String[]> allRoles = PigeonRole.all();
-        int idx = 0;
-        for (Map.Entry<String, String[]> entry : allRoles.entrySet()) {
-            String roleKey = entry.getKey();
-            int slotIndex = idx + 1;
-            int priceFen = idx < prices.length ? prices[idx] : 0;
-            FeigePigeon ownedPigeon = ownedByRole.get(roleKey);
+        List<Map<String, Object>> slots = new ArrayList<>();
+        for (int slotIndex = 1; slotIndex <= MAX_SLOTS; slotIndex++) {
+            int priceFen = slotIndex - 1 < prices.length ? prices[slotIndex - 1] : 0;
+            FeigePigeon pigeon = ownedBySlot.get(slotIndex);
             Map<String, Object> slot = new HashMap<>();
             slot.put("index", slotIndex);
-            slot.put("roleKey", roleKey);
-            if (ownedPigeon != null) {
-                slot.put("name", ownedPigeon.getName());
-                slot.put("status", ownedPigeon.getStatus());
-                slot.put("deliveredCount", ownedPigeon.getDeliveredCount());
-                slot.put("totalMileage", ownedPigeon.getTotalMileage());
+            slot.put("amountFen", slotIndex > FREE_SLOTS ? priceFen : 0);
+            if (pigeon != null) {
+                slot.put("roleKey", pigeon.getRoleKey());
+                slot.put("name", pigeon.getName());
+                slot.put("status", pigeon.getStatus());
+                slot.put("deliveredCount", pigeon.getDeliveredCount());
+                slot.put("totalMileage", pigeon.getTotalMileage());
                 slot.put("paid", slotIndex > FREE_SLOTS);
-                slot.put("amountFen", slotIndex > FREE_SLOTS ? priceFen : 0);
+                slot.put("occupied", true);
             } else {
+                slot.put("roleKey", null);
                 slot.put("name", null);
                 slot.put("status", "EMPTY");
                 slot.put("deliveredCount", 0);
                 slot.put("totalMileage", 0);
                 slot.put("paid", false);
-                slot.put("amountFen", slotIndex > FREE_SLOTS ? priceFen : 0);
+                slot.put("occupied", false);
             }
-            slot.put("motto", PigeonRole.motto(roleKey));
             slots.add(slot);
-            idx++;
+        }
+
+        // 候选角色：尚未拥有的全部角色（规格15.5：购买位置后从候选角色中选择入住）
+        List<Map<String, Object>> candidates = new ArrayList<>();
+        for (Map.Entry<String, String[]> entry : PigeonRole.all().entrySet()) {
+            String roleKey = entry.getKey();
+            if (ownedByRole.containsKey(roleKey)) {
+                continue;
+            }
+            Map<String, Object> cand = new HashMap<>();
+            cand.put("roleKey", roleKey);
+            cand.put("name", PigeonRole.defaultName(roleKey));
+            cand.put("motto", PigeonRole.motto(roleKey));
+            candidates.add(cand);
         }
 
         Map<String, Object> data = new HashMap<>();
         data.put("slots", slots);
+        data.put("candidates", candidates);
         data.put("freeCount", Math.max(0, MAX_SLOTS - owned.size()));
         data.put("maxSlots", MAX_SLOTS);
         data.put("paidEnabled", paidEnabled);
         data.put("mockPay", mockPay);
         return data;
     }
-
     /**
      * 创建购买订单（规格15.5：创建订单→支付→回调确认）。
      *
      * @return null 表示参数/状态非法；否则 { orderNo, roleKey, slotIndex, amountFen, status }
      */
-    public Map<String, Object> createOrder(String openid, String roleKey) {
+    public Map<String, Object> createOrder(String openid, Integer slotIndex, String roleKey) {
         if (!paidEnabled) {
-            log.info("付费开关关闭，跳过下单 openid={} roleKey={}", openid, roleKey);
+            log.info("付费开关关闭，跳过下单 openid={} slot={}", openid, slotIndex);
             return null;
         }
         if (!PigeonRole.isValid(roleKey) || FeigePigeon.ROLE_XIAOBAI.equals(roleKey)) {
             return null;
         }
+        // 位置 2~6 可购买（规格15.3：价格绑定位置；位置1小白免费不售）
+        if (slotIndex == null || slotIndex <= FREE_SLOTS || slotIndex > MAX_SLOTS) {
+            return null;
+        }
         if (feigePigeonService.getByOpenidAndRole(openid, roleKey) != null) {
             return null;
         }
-        // 防重复下单：已存在该角色 PAID 订单（权益可能已发放）也不允许再下单
-        FeigeOrder paid = feigeOrderMapper.selectLatestByOpenidAndRole(openid, roleKey);
-        if (paid != null && FeigeOrder.STATUS_PAID.equals(paid.getStatus())) {
+        // 目标位置必须为空（买的是空位置）
+        if (feigePigeonService.getByOpenidAndSlot(openid, slotIndex) != null) {
             return null;
         }
-        int slotIndex = slotIndexOf(roleKey);
-        if (slotIndex <= FREE_SLOTS || slotIndex > MAX_SLOTS) {
+        // 防重复下单：该角色或该位置存在未完成订单（CREATED/PAID 均拦截，避免占位重复）
+        FeigeOrder existRole = feigeOrderMapper.selectLatestByOpenidAndRole(openid, roleKey);
+        if (existRole != null && !FeigeOrder.STATUS_CANCELLED.equals(existRole.getStatus())
+                && !FeigeOrder.STATUS_REFUNDED.equals(existRole.getStatus())) {
+            return null;
+        }
+        FeigeOrder existSlot = feigeOrderMapper.selectLatestByOpenidAndSlot(openid, slotIndex);
+        if (existSlot != null && !FeigeOrder.STATUS_CANCELLED.equals(existSlot.getStatus())
+                && !FeigeOrder.STATUS_REFUNDED.equals(existSlot.getStatus())) {
             return null;
         }
         int[] prices = parsePrices();
@@ -184,12 +207,15 @@ public class FeigePayService {
             return latest == null ? null : orderResult(latest);
         }
 
-        // 权益发放：已支付才创建鸽子（幂等：grantByRole 内部查重；不受 paid-enabled 开关拦截）
-        FeigePigeon pigeon = feigePigeonService.grantByRole(order.getOpenid(), order.getRoleKey());
+        // 权益发放：已支付才创建鸽子并入住订单位置（幂等：grantByRole 内部查重+位置占用检查）
+        FeigePigeon pigeon = feigePigeonService.grantByRole(order.getOpenid(), order.getRoleKey(),
+                order.getSlotIndex());
         if (pigeon == null) {
-            log.warn("权益发放失败(可能已拥有或超上限) orderNo={} roleKey={}", orderNo, order.getRoleKey());
+            log.warn("权益发放失败(可能已拥有/位置已占/超上限) orderNo={} roleKey={} slot={}",
+                    orderNo, order.getRoleKey(), order.getSlotIndex());
         }
-        log.info("支付确认成功 orderNo={} roleKey={} openid={}", orderNo, order.getRoleKey(), order.getOpenid());
+        log.info("支付确认成功 orderNo={} roleKey={} slot={} openid={}",
+                orderNo, order.getRoleKey(), order.getSlotIndex(), order.getOpenid());
         // 返回最新订单状态（避免内存旧对象显示 CREATED）
         FeigeOrder latest = feigeOrderMapper.selectByOrderNo(orderNo);
         return orderResult(latest == null ? order : latest);
@@ -222,11 +248,6 @@ public class FeigePayService {
         return paidEnabled;
     }
 
-    /** 该用户是否已拥有某角色（权益/重复购买判断）。 */
-    public boolean ownsRole(String openid, String roleKey) {
-        return feigePigeonService.getByOpenidAndRole(openid, roleKey) != null;
-    }
-
     private Map<String, Object> orderResult(FeigeOrder order) {
         Map<String, Object> data = new HashMap<>();
         data.put("orderNo", order.getOrderNo());
@@ -236,18 +257,6 @@ public class FeigePayService {
         data.put("status", order.getStatus());
         data.put("paid", FeigeOrder.STATUS_PAID.equals(order.getStatus()));
         return data;
-    }
-
-    /** 角色对应的鸽舍位置序号（规格角色顺序=位置顺序）。 */
-    private int slotIndexOf(String roleKey) {
-        int idx = 0;
-        for (String key : PigeonRole.all().keySet()) {
-            idx++;
-            if (key.equals(roleKey)) {
-                return idx;
-            }
-        }
-        return 0;
     }
 
     private int[] parsePrices() {
