@@ -64,12 +64,12 @@
 
 ---
 
-## V1.2（付费能力，依赖微信虚拟支付资格）—— 🚧 主体完成（mock 支付回归通过；真实微信支付待资格 A2）
+## V1.2（付费能力，依赖微信虚拟支付资格）—— 🚧 主体完成（V4.2 槽位模型回归通过；真实微信支付待资格 A2）
 
 | # | 功能 | 规格出处 | 说明 | 状态 |
 |---|---|---|---|
-| V12-1 | 多鸽购买（第 2~6 只付费） | 15 | 订单/支付回调/权益发放幂等/退款规则（A1/A2/A7） | ✅ 回归通过：feige_order 订单表、下单 → confirm(mock) → PAID → 权益发放（阿闪入舍）→ 幂等验证；测试库已建 feige_order 表、PAID_PIGEON_ENABLED=true |
-| V12-2 | 鸽舍扩建与候选角色 | 15.4/15.5 | 鸽舍管理接口、空位置、PAID_PIGEON_ENABLED 开关（B7） | ✅ 回归通过：GET /pigeon/slots 六槽位（XIAOBAI/PANGDUN/阿闪 入舍、付费标记正确）、开关/价格配置生效 |
+| V12-1 | 多鸽购买（第 2~6 只付费） | 15 | 订单/支付回调/权益发放幂等/退款规则（A1/A2/A7） | ✅ V4.2 回归通过：槽位模型（价格绑位置、买位置+选角色）——下单槽4+HUIHUI(600分)→confirm→PAID→入住槽4；同槽占位拦截；feige_order 表已建、PAID_PIGEON_ENABLED=true |
+| V12-2 | 鸽舍扩建与候选角色 | 15.4/15.5 | 鸽舍管理接口、空位置、PAID_PIGEON_ENABLED 开关（B7） | ✅ V4.2 回归通过：slots 物理位置模型（occupied/roleKey/amountFen/candidates/freeCount），免费创建自动分配最小空位 |
 | V12-3 | **七牛上传凭证** | 需求 | `POST /feige/upload/token`：空间 mgif、目录 feige/（参考 MaterialController#uploadToken；qiniu-java-sdk 7.13.0；fsize 1KB~100MB；mp4/mov 转码） | ✅ 开发完成，本地自测通过（token 策略验证：scope=mgif:feige/..、fsize 限制、mp4 转码） |
 
 **V1.2 执行顺序**（依赖关系）：
@@ -145,6 +145,13 @@
 > **下一步：V1.1**（按上节执行顺序：订阅模型 → 发件人/回信通知 → 投诉 → 多鸽体系 → 模板接通）。
 
 ---
+
+## V1.2 槽位模型（V4.2）回归记录
+
+- **回归日期**：2026-09-02（测试机 develop 9026750）
+- **回归结果**：✅ 通过 —— 买槽4+选HUIHUI(600分) → confirm → PAID → 鸽子入住槽4；slots 展示 occupied/候选角色/位置价正确；同槽/同角色防重复下单拦截正常
+- **测试库执行**：feige_pigeon 加 `slot_index`（默认1）+ `UNIQUE(openid, slot_index)` + 存量回填
+- **⚠️ 存量数据迁移注意事项（V4.0 → V4.2）**：V4.0 按「角色」创建的历史鸽子与订单，在 V4.2 回填时可能出现**订单位置与鸽子实际槽位错位**（如 ASHAN 订单在槽4、鸽子回填到槽3），导致槽4 被历史 PAID 订单占用而无法售卖新鸽。测试环境已手工修正；**生产上线前需评估存量用户回填正确性**（schema.sql 回填 SQL 对 V4.0 存量鸽子的槽位分配与历史订单 slot_index 的同步），建议上线脚本一并 UPDATE 历史订单 slot_index 对齐鸽子实际位置。
 
 ## 版本计划变更记录
 
