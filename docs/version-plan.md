@@ -64,18 +64,18 @@
 
 ---
 
-## V1.2（付费能力，依赖微信虚拟支付资格）—— 🚧 开发中（本地自测通过，待测试机回归）
+## V1.2（付费能力，依赖微信虚拟支付资格）—— 🚧 主体完成（mock 支付回归通过；真实微信支付待资格 A2）
 
 | # | 功能 | 规格出处 | 说明 | 状态 |
 |---|---|---|---|
-| V12-1 | 多鸽购买（第 2~6 只付费） | 15 | 订单/支付回调/权益发放幂等/退款规则（A1/A2/A7） | ✅ 开发完成：feige_order 订单表、下单/支付确认(mock)/回调/退款（REFUNDED 不删历史）、权益发放幂等（grantByRole 查重） |
-| V12-2 | 鸽舍扩建与候选角色 | 15.4/15.5 | 鸽舍管理接口、空位置、PAID_PIGEON_ENABLED 开关（B7） | ✅ 开发完成：GET /pigeon/slots（空位/候选/价格）、PAID_PIGEON_ENABLED 开关（开=付费/关=免费兼容）、价格配置 FG_PIGEON_PRICES |
+| V12-1 | 多鸽购买（第 2~6 只付费） | 15 | 订单/支付回调/权益发放幂等/退款规则（A1/A2/A7） | ✅ 回归通过：feige_order 订单表、下单 → confirm(mock) → PAID → 权益发放（阿闪入舍）→ 幂等验证；测试库已建 feige_order 表、PAID_PIGEON_ENABLED=true |
+| V12-2 | 鸽舍扩建与候选角色 | 15.4/15.5 | 鸽舍管理接口、空位置、PAID_PIGEON_ENABLED 开关（B7） | ✅ 回归通过：GET /pigeon/slots 六槽位（XIAOBAI/PANGDUN/阿闪 入舍、付费标记正确）、开关/价格配置生效 |
 | V12-3 | **七牛上传凭证** | 需求 | `POST /feige/upload/token`：空间 mgif、目录 feige/（参考 MaterialController#uploadToken；qiniu-java-sdk 7.13.0；fsize 1KB~100MB；mp4/mov 转码） | ✅ 开发完成，本地自测通过（token 策略验证：scope=mgif:feige/..、fsize 限制、mp4 转码） |
 
 **V1.2 执行顺序**（依赖关系）：
 1. **V12-2 开关与槽位**（PAID_PIGEON_ENABLED + slots 空位/候选/价格，先有模型）
 2. **V12-1 订单/支付**（下单 → 支付确认(mock) → 回调 → 权益发放幂等 → 退款）
-3. **微信支付接入**（虚拟支付资格通过后：配置 FG_PAY_MCH_ID/API_KEY，回调验签，关闭 mock；A2）
+3. ⏳ **微信支付接入**（虚拟支付资格通过后：配置 FG_PAY_MCH_ID/API_KEY，回调验签，关闭 mock；A2）—— 代码待办见下方清单（下单/回调/状态查询三接口）
 4. **价格确认**（A1 定稿后改 FG_PIGEON_PRICES 默认值）
 
 ### 微信支付接入清单（资格通过后执行，供真实支付代码编写参考）
