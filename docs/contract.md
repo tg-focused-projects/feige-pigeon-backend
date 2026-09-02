@@ -242,11 +242,11 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
-| V3.0 | 2026-09-01 | V1.1：订阅表 feige_subscription 双方独立订阅（ARRIVAL/REPLY_ARRIVAL）、订阅接口支持 type、飞行页返回订阅状态；投诉 POST /feige/report；多鸽体系 pigeon/role_key + PigeonRole 六角色、GET /pigeon/list、POST /pigeon/create、POST /pigeon/rename（首达后）、GET /pigeon/journeys（含去过城市）；回信到达通知模板配置 reply-arrival-template-id |
-| V3.1 | 2026-09-01 | V11-8 通知接通：订阅模板审核通过并适配（thing1/time2/thing3/thing4 字段，发件人/收件人区分文案）；WeChatClient 推送支持指定模板 ID；yml 默认填入模板 ID |
-| V3.2 | 2026-09-01 | share-preview 返参新增 senderSignature（发件落款）、departureTime（发出时间），对齐规格6.1 认领前展示 |
-| V4.0 | 2026-09-02 | V1.2 付费能力：feige_order 订单表、PAID_PIGEON_ENABLED 开关（规格15.6）、GET /pigeon/slots（空位/候选/价格）、POST /pigeon/order、POST /pigeon/confirm（mock）、POST /pay/callback（支付回调）、GET /pigeon/orders；支付确认幂等发放权益、退款不删历史（规格15.5）；价格配置 FG_PIGEON_PRICES（A1 待定） |
 | V4.2 | 2026-09-02 | V1.2 槽位模型（规格15.3/15.5）：feige_pigeon 加 slot_index+UNIQUE(openid,slot_index)；价格绑定位置、角色可选入住；POST /pigeon/order 入参改 slotIndex+roleKey；slots 返回物理位置+已入住角色+candidates 候选；支付权益按订单位置入住；免费创建自动分配最小空位 |
 | V4.1 | 2026-09-02 | V1.2 补充：POST /feige/upload/token 七牛上传凭证（空间 mgif/目录 feige/，参考 MaterialController#uploadToken；qiniu-java-sdk 7.13.0） |
+| V4.0 | 2026-09-02 | V1.2 付费能力：feige_order 订单表、PAID_PIGEON_ENABLED 开关（规格15.6）、GET /pigeon/slots（空位/候选/价格）、POST /pigeon/order、POST /pigeon/confirm（mock）、POST /pay/callback（支付回调）、GET /pigeon/orders；支付确认幂等发放权益、退款不删历史（规格15.5）；价格配置 FG_PIGEON_PRICES（A1 待定） |
+| V3.2 | 2026-09-01 | share-preview 返参新增 senderSignature（发件落款）、departureTime（发出时间），对齐规格6.1 认领前展示 |
+| V3.1 | 2026-09-01 | V11-8 通知接通：订阅模板审核通过并适配（thing1/time2/thing3/thing4 字段，发件人/收件人区分文案）；WeChatClient 推送支持指定模板 ID；yml 默认填入模板 ID |
+| V3.0 | 2026-09-01 | V1.1：订阅表 feige_subscription 双方独立订阅（ARRIVAL/REPLY_ARRIVAL）、订阅接口支持 type、飞行页返回订阅状态；投诉 POST /feige/report；多鸽体系 pigeon/role_key + PigeonRole 六角色、GET /pigeon/list、POST /pigeon/create、POST /pigeon/rename（首达后）、GET /pigeon/journeys（含去过城市）；回信到达通知模板配置 reply-arrival-template-id |
 | V2.0 | 2026-09-01 | 路径去 `/small-soogif`；send/bind/reply 改 JSON；新增 title/signature、isSendLetter、坐标兜底、5分钟保底、回信直达、往返字段、信箱列表；关闭等级/经验结算 |
 | V1.3 | 2026-08-27 | 旧版契约（路径含 /small-soogif，form 入参，无 V2 字段） |
