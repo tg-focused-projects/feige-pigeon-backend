@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V4.2 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V4.3 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V4.2**（2026-09-02，V1.2 槽位模型：价格绑定位置+角色可选入住，对齐规格15.3/15.5；含七牛凭证与 V1.1 全部）
+> 版本：**V4.3**（2026-09-02，召回宽限期可配置 FG_RECALL_GRACE_MINUTES；含 V1.2 槽位模型与 V1.1 全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://test.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -58,7 +58,7 @@
 ```
 send(departure_time=server now, status=FLYING_UNCLAIMED, thread_id=自身)
    ├─ 认领(claim_expire_time>now, 原子) ─> IN_FLIGHT ─(arrival_time<=now)─> ARRIVED ─(拆信)─> DELIVERED
-   ├─ 发件人召回(≥30min, 未认领) ─> RECALLED(终态, 分享失效)
+   ├─ 发件人召回(≥recall_grace 默认30min, 未认领) ─> RECALLED(终态, 分享失效)
    └─ 72h 未认领 ─> UNCLAIMED_EXPIRED(终态, 分享失效)
 
 reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 不再认领/分享) ─> ARRIVED ─> DELIVERED
@@ -98,7 +98,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 ### `POST /feige/letter/recall` — 发件人免费召回（form）
 入参：`letterId* openid*`
-条件：`sender` + `FLYING_UNCLAIMED` + `now>=departure+30min` + `now<claim_expire_time` + `recipient IS NULL`
+条件：`sender` + `FLYING_UNCLAIMED` + `now>=departure+recall_grace`（默认30min，可配 `FG_RECALL_GRACE_MINUTES`）+ `now<claim_expire_time` + `recipient IS NULL`
 出参：`{ recalled:true, recalledAt }`
 错误：`LETTER_NOT_FOUND` `ACCESS_DENIED` `RECALL_TOO_EARLY` `CLAIM_EXPIRED` `RECALL_NOT_ALLOWED` `ALREADY_CLAIMED`
 
@@ -242,6 +242,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V4.3 | 2026-09-02 | 召回宽限期可配置：`FG_RECALL_GRACE_MINUTES`（默认 30 分钟=规格5.3，测试可设 5 便于验证） |
 | V4.2 | 2026-09-02 | V1.2 槽位模型（规格15.3/15.5）：feige_pigeon 加 slot_index+UNIQUE(openid,slot_index)；价格绑定位置、角色可选入住；POST /pigeon/order 入参改 slotIndex+roleKey；slots 返回物理位置+已入住角色+candidates 候选；支付权益按订单位置入住；免费创建自动分配最小空位 |
 | V4.1 | 2026-09-02 | V1.2 补充：POST /feige/upload/token 七牛上传凭证（空间 mgif/目录 feige/，参考 MaterialController#uploadToken；qiniu-java-sdk 7.13.0） |
 | V4.0 | 2026-09-02 | V1.2 付费能力：feige_order 订单表、PAID_PIGEON_ENABLED 开关（规格15.6）、GET /pigeon/slots（空位/候选/价格）、POST /pigeon/order、POST /pigeon/confirm（mock）、POST /pay/callback（支付回调）、GET /pigeon/orders；支付确认幂等发放权益、退款不删历史（规格15.5）；价格配置 FG_PIGEON_PRICES（A1 待定） |
