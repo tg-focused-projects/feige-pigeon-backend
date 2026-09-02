@@ -3,9 +3,11 @@ package com.an.feige.feige.service;
 import com.alibaba.fastjson.JSON;
 import com.an.feige.common.WxXPayClient;
 import com.an.feige.feige.entity.FeigeOrder;
+import com.an.feige.feige.entity.FeigePayGoods;
 import com.an.feige.feige.entity.FeigePigeon;
 import com.an.feige.feige.entity.PigeonRole;
 import com.an.feige.feige.mapper.FeigeOrderMapper;
+import com.an.feige.feige.mapper.FeigePayGoodsMapper;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +55,9 @@ public class FeigePayService {
     private FeigeOrderMapper feigeOrderMapper;
 
     @Resource
+    private FeigePayGoodsMapper feigePayGoodsMapper;
+
+    @Resource
     private FeigePigeonService feigePigeonService;
 
     @Resource
@@ -61,17 +66,11 @@ public class FeigePayService {
     @Value("${feige.pigeon.paid-enabled:false}")
     private boolean paidEnabled;
 
-    @Value("${feige.pigeon.prices:0,100,300,600,1000,1500}")
-    private String pricesConfig;
-
     @Value("${feige.pay.mock-pay:true}")
     private boolean mockPay;
 
     @Value("${feige.pay.offer-id:}")
     private String offerId;
-
-    @Value("${feige.pay.goods-ids:}")
-    private String goodsIdsConfig;
 
     /** 前端支付签名用固定 uri（官方 wx.requestVirtualPayment 约定）。 */
     private static final String URI_PAY = "requestVirtualPayment";
@@ -91,14 +90,19 @@ public class FeigePayService {
             ownedByRole.put(p.getRoleKey(), p);
         }
 
-        int[] prices = parsePrices();
+        // 商品配置（V5.1 起以 feige_pay_goods 表为准：价格/道具 productId 都从表读）
+        Map<Integer, FeigePayGoods> goodsBySlot = goodsBySlot();
+
         List<Map<String, Object>> slots = new ArrayList<>();
         for (int slotIndex = 1; slotIndex <= MAX_SLOTS; slotIndex++) {
-            int priceFen = slotIndex - 1 < prices.length ? prices[slotIndex - 1] : 0;
+            FeigePayGoods goods = goodsBySlot.get(slotIndex);
+            int priceFen = goods == null ? 0 : goods.getPriceFen();
             FeigePigeon pigeon = ownedBySlot.get(slotIndex);
             Map<String, Object> slot = new HashMap<>();
             slot.put("index", slotIndex);
             slot.put("amountFen", slotIndex > FREE_SLOTS ? priceFen : 0);
+            // V5.1：收费槽位是否已配置商品（表未配置则前端禁用购买，防止无价下单）
+            slot.put("goodsConfigured", slotIndex <= FREE_SLOTS || goods != null);
             if (pigeon != null) {
                 slot.put("roleKey", pigeon.getRoleKey());
                 slot.put("name", pigeon.getName());
@@ -182,8 +186,13 @@ public class FeigePayService {
                 && !FeigeOrder.STATUS_REFUNDED.equals(existSlot.getStatus())) {
             return null;
         }
-        int[] prices = parsePrices();
-        int amountFen = slotIndex - 1 < prices.length ? prices[slotIndex - 1] : 0;
+        // V5.1：价格/道具以 feige_pay_goods 表为准——表未配置该槽位商品则拒绝下单（防无价单/错误 productId）
+        FeigePayGoods goods = feigePayGoodsMapper.selectBySlotIndex(slotIndex);
+        if (goods == null) {
+            log.warn("下单拒绝：槽位{}未配置商品(feige_pay_goods) openid={} roleKey={}", slotIndex, openid, roleKey);
+            return null;
+        }
+        int amountFen = goods.getPriceFen();
 
         Date now = new Date();
         FeigeOrder order = new FeigeOrder();
@@ -221,9 +230,11 @@ public class FeigePayService {
      * <p>注意：signData 的 JSON 键序必须与 paySig 签名时一致（TreeMap 保证升序）。</p>
      */
     public Map<String, Object> buildPayData(FeigeOrder order, int amountFen, String sessionKey) {
-        String productId = productIdOfSlot(order.getSlotIndex());
+        // V5.1：道具 productId 从 feige_pay_goods 表读（下单时已校验存在，这里兜底再查一次）
+        FeigePayGoods goods = feigePayGoodsMapper.selectBySlotIndex(order.getSlotIndex());
+        String productId = goods == null ? null : goods.getProductId();
         if (StringUtils.isBlank(productId)) {
-            log.warn("槽位{}未配置道具productId(goods-ids), 下单仍返回但支付将失败 slot={} orderNo={}",
+            log.warn("槽位{}未配置道具productId(feige_pay_goods), 支付将失败 slot={} orderNo={}",
                     order.getSlotIndex(), order.getSlotIndex(), order.getOrderNo());
         }
         java.util.TreeMap<String, Object> signMap = new java.util.TreeMap<>();
@@ -249,14 +260,13 @@ public class FeigePayService {
         return payData;
     }
 
-    /** 槽位(2~6) → 道具 productId：goods-ids 逗号分隔，下标0对应槽位2。 */
-    private String productIdOfSlot(Integer slotIndex) {
-        if (slotIndex == null || slotIndex < 2) {
-            return null;
+    /** 全量商品配置按槽位建索引（slots 展示用）。 */
+    private Map<Integer, FeigePayGoods> goodsBySlot() {
+        Map<Integer, FeigePayGoods> map = new HashMap<>();
+        for (FeigePayGoods g : feigePayGoodsMapper.selectAll()) {
+            map.put(g.getSlotIndex(), g);
         }
-        String[] ids = StringUtils.split(StringUtils.defaultString(goodsIdsConfig), ",");
-        int idx = slotIndex - 2;
-        return ids != null && idx < ids.length ? ids[idx].trim() : null;
+        return map;
     }
 
     /**
@@ -372,19 +382,6 @@ public class FeigePayService {
         data.put("status", order.getStatus());
         data.put("paid", FeigeOrder.STATUS_PAID.equals(order.getStatus()));
         return data;
-    }
-
-    private int[] parsePrices() {
-        String[] parts = StringUtils.defaultString(pricesConfig, "0,100,300,600,1000,1500").split(",");
-        int[] prices = new int[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            try {
-                prices[i] = Integer.parseInt(parts[i].trim());
-            } catch (NumberFormatException e) {
-                prices[i] = 0;
-            }
-        }
-        return prices;
     }
 
     /** 业务订单号：8~32 位，字母/数字/_-|*@，不以 _ 开头。格式 OD+yyMMddHHmmssSSS+3位随机 ≈ 21 位。 */
