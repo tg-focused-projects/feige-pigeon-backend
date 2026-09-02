@@ -143,7 +143,7 @@
 | MP 后台 → 虚拟支付 | 发货推送配置 | 填 https 回调 URL（指向 `/feige/pay/notify`） |
 | MP 后台 → 虚拟支付 | 基础配置 | 记录 OfferID / 现网 AppKey / AppID |
 | MP 后台 → 虚拟支付 | iOS 支付（可选） | 先配「小程序简称」，Apple 支付仅现网环境 |
-| 小程序后台 | request 合法域名 | 已配置（`https://test.soogif.com`），保持不变；另服务端调微信 `api.weixin.qq.com`（服务端不限） |
+| 小程序后台 | request 合法域名 | 先配置 vs 域名（如 `https://demo.soogif.com`）as 测试环境；**`test.soogif.com` 是生产，勿混用** |
 
 #### 参考项目落地经验（search111 已跑通虚拟支付，接入时可对照源码）
 

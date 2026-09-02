@@ -2,7 +2,7 @@
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
 > 版本：**V5.1**（2026-09-02，虚拟支付道具商品表 feige_pay_goods：槽位价格与 productId 由表驱动；含 V5.0 及以下全部）
-> 基础地址：本地 `http://localhost:8098`；**测试环境 `http://test.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式）
+> 基础地址：本地 `http://localhost:8098`；**测试环境 `http://demo.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式；⚠️ `test.soogif.com` 指向生产 TKE 集群，切勿用于测试）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
 > 登录：自研 `WeChatClient`（jscode2session/订阅推送），不做 union 绑定
