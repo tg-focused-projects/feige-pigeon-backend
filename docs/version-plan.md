@@ -70,6 +70,7 @@
 |---|---|---|---|
 | V12-1 | 多鸽购买（第 2~6 只付费） | 15 | 订单/支付回调/权益发放幂等/退款规则（A1/A2/A7） | ✅ 开发完成：feige_order 订单表、下单/支付确认(mock)/回调/退款（REFUNDED 不删历史）、权益发放幂等（grantByRole 查重） |
 | V12-2 | 鸽舍扩建与候选角色 | 15.4/15.5 | 鸽舍管理接口、空位置、PAID_PIGEON_ENABLED 开关（B7） | ✅ 开发完成：GET /pigeon/slots（空位/候选/价格）、PAID_PIGEON_ENABLED 开关（开=付费/关=免费兼容）、价格配置 FG_PIGEON_PRICES |
+| V12-3 | **七牛上传凭证** | 需求 | `POST /feige/upload/token`：空间 mgif、目录 feige/（参考 MaterialController#uploadToken；qiniu-java-sdk 7.13.0；fsize 1KB~100MB；mp4/mov 转码） | ✅ 开发完成，本地自测通过（token 策略验证：scope=mgif:feige/..、fsize 限制、mp4 转码） |
 
 **V1.2 执行顺序**（依赖关系）：
 1. **V12-2 开关与槽位**（PAID_PIGEON_ENABLED + slots 空位/候选/价格，先有模型）
@@ -154,6 +155,7 @@
 | 2026-09-01 | **V1.1 开发完成（本地自测通过）**：订阅模型（feige_subscription，ARRIVAL/REPLY_ARRIVAL 双方独立）、发件人订阅+回信到达通知、投诉入口（feige_report）、六鸽角色体系（role_key + pigeon/list + create）、改名（首达后）、旅程履历（journeys）；契约更新至 V3.0；待测试机回归 |
 | 2026-09-02 | **V1.1 测试机回归通过**（V11-1~8 全部验证；含通知链路与 REPLY_ARRIVAL 订阅双层状态检查修复）；契约更新至 V3.1 |
 | 2026-09-02 | **V1.1 修复**：`share-preview` 返参新增 `senderSignature`（发件落款）、`departureTime`（发出时间），对齐规格6.1 认领前展示；契约更新至 V3.2 |
+| 2026-09-02 | **V1.2 补充**：七牛上传凭证接口 `POST /feige/upload/token`（空间 mgif/目录 feige/）；契约更新至 V4.1 |
 | 2026-09-02 | **V1.2 开发完成（本地自测通过）**：多鸽付费购买（feige_order 订单表/下单/支付确认 mock/回调/权益发放幂等/退款不删历史）、鸽舍槽位（slots 空位/候选/价格）、PAID_PIGEON_ENABLED 开关（开=付费/关=免费兼容）、价格配置 FG_PIGEON_PRICES；契约更新至 V4.0；待测试机回归 |
 
 ---

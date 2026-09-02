@@ -59,6 +59,15 @@ feige:
     appid: ${FG_WECHAT_APPID:}
     # mock 支付模式：凭证未配且为 true 时，confirm 接口直接置 PAID（仅限测试环境，生产必须 false）
     mock-pay: ${FG_PAY_MOCK:true}
+  qiniu:
+    # 七牛云上传凭证（空间 mgif 不变，目录 feige/；凭证由环境变量注入）
+    access-key: ${FG_QINIU_ACCESS_KEY:}
+    secret-key: ${FG_QINIU_SECRET_KEY:}
+    bucket: ${FG_QINIU_BUCKET:mgif}
+    # 上传目录前缀（需求：/feige）
+    prefix: ${FG_QINIU_PREFIX:feige}
+    # 上传凭证有效期（秒）
+    expire-seconds: ${FG_QINIU_EXPIRE_SECONDS:3600}
 
 logging:
   level:

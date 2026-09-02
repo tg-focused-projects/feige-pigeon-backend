@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V4.0 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V4.1 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V4.0**（2026-09-02，V1.2 付费能力：多鸽购买订单/支付回调/权益发放幂等/鸽舍槽位；含 V1.1 全部）
+> 版本：**V4.1**（2026-09-02，V1.2 补充：七牛上传凭证接口；含 V1.2 付费与 V1.1 全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://test.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -196,6 +196,13 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 入参：`openid*`
 出参：`[{ orderNo, roleKey, slotIndex, amountFen, status(CREATED|PAID|REFUNDED|CANCELLED), payTime, createAt }]`
 
+### `POST /feige/upload/token` — 获取七牛上传凭证（**V4.1 新增**，form）
+入参：`suffix[]?`（文件后缀数组，如 `.jpg`/`.png`/`.mp4`；缺省默认 `.jpg`）
+出参：`[{ token, fileName }]`（每个后缀生成一条；`fileName` = `feige/<uuid><suffix>`）
+说明：七牛空间 `mgif`、目录 `feige/`（需求指定）；大小限制 1KB~100MB；`.mp4`/`.mov` 追加 `avthumb/mp4/vcodec/libx264` 转码（persistentPipeline=budong）；凭证有效期 1 小时。凭证 `FG_QINIU_ACCESS_KEY/FG_QINIU_SECRET_KEY` 未配置时返回 `QINIU_NOT_CONFIGURED`。
+错误：`QINIU_NOT_CONFIGURED`
+
+
 **配置（V1.2）**：`PAID_PIGEON_ENABLED`（规格15.6 开关，默认 false=免费创建兼容）、`FG_PIGEON_PRICES`（位置2~6价格分，默认 `0,100,300,600,1000,1500`，A1 待定）、`FG_PAY_MCH_ID/FG_PAY_API_KEY`（微信支付凭证，A2 申请中可空）、`FG_PAY_MOCK`（mock 支付，默认 true 仅测试）。
 
 入参：`openid* pigeonId*`
@@ -239,5 +246,6 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 | V3.1 | 2026-09-01 | V11-8 通知接通：订阅模板审核通过并适配（thing1/time2/thing3/thing4 字段，发件人/收件人区分文案）；WeChatClient 推送支持指定模板 ID；yml 默认填入模板 ID |
 | V3.2 | 2026-09-01 | share-preview 返参新增 senderSignature（发件落款）、departureTime（发出时间），对齐规格6.1 认领前展示 |
 | V4.0 | 2026-09-02 | V1.2 付费能力：feige_order 订单表、PAID_PIGEON_ENABLED 开关（规格15.6）、GET /pigeon/slots（空位/候选/价格）、POST /pigeon/order、POST /pigeon/confirm（mock）、POST /pay/callback（支付回调）、GET /pigeon/orders；支付确认幂等发放权益、退款不删历史（规格15.5）；价格配置 FG_PIGEON_PRICES（A1 待定） |
+| V4.1 | 2026-09-02 | V1.2 补充：POST /feige/upload/token 七牛上传凭证（空间 mgif/目录 feige/，参考 MaterialController#uploadToken；qiniu-java-sdk 7.13.0） |
 | V2.0 | 2026-09-01 | 路径去 `/small-soogif`；send/bind/reply 改 JSON；新增 title/signature、isSendLetter、坐标兜底、5分钟保底、回信直达、往返字段、信箱列表；关闭等级/经验结算 |
 | V1.3 | 2026-08-27 | 旧版契约（路径含 /small-soogif，form 入参，无 V2 字段） |

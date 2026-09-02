@@ -13,6 +13,7 @@ import com.an.feige.feige.service.FeigeLetterService;
 import com.an.feige.feige.service.FeigePayService;
 import com.an.feige.feige.service.FeigePigeonService;
 import com.an.feige.feige.service.FeigeReportService;
+import com.an.feige.feige.service.QiniuUploadService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.apache.commons.lang3.StringUtils;
@@ -55,6 +56,9 @@ public class FeigeController {
 
     @Autowired
     private FeigePayService feigePayService;
+
+    @Autowired
+    private QiniuUploadService qiniuUploadService;
 
     @Autowired
     private SignUtil feigeSignUtil;
@@ -382,6 +386,18 @@ public class FeigeController {
     @ResponseBody
     public Map<String, Object> pigeonOrders(@RequestParam(name = "openid", required = true) String openid) {
         return ok(feigePayService.ordersOf(openid));
+    }
+
+    // -------------------- 七牛上传凭证 --------------------
+    @ApiOperation("获取七牛上传凭证")
+    @PostMapping("/upload/token")
+    @ResponseBody
+    public Map<String, Object> uploadToken(@RequestParam(name = "suffix[]", required = false) String[] suffix) {
+        List<Map<String, Object>> tokens = qiniuUploadService.uploadTokens(suffix);
+        if (tokens.isEmpty()) {
+            return err(500, "七牛凭证未配置", "QINIU_NOT_CONFIGURED");
+        }
+        return ok(tokens);
     }
 
     // -------------------- 内部工具 --------------------
