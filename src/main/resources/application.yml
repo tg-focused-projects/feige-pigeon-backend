@@ -47,6 +47,9 @@ feige:
     enabled: ${FG_LOCK_ENABLED:false}
     # 锁自动过期秒数：须大于扫描最长耗时、小于调度周期(60s)
     ttl-seconds: ${FG_LOCK_TTL_SECONDS:30}
+  letter:
+    # 召回宽限期(分钟)：规格5.3=30；测试环境设 5 便于验证召回（FG_RECALL_GRACE_MINUTES 覆盖）
+    recall-grace-minutes: ${FG_RECALL_GRACE_MINUTES:30}
   pigeon:
     # 多鸽付费能力开关（规格15.6 PAID_PIGEON_ENABLED）：false=第2~6只免费创建（无支付资格期兼容）；true=必须购买
     paid-enabled: ${PAID_PIGEON_ENABLED:false}

@@ -9,6 +9,7 @@ import com.an.feige.feige.entity.FeigePigeon;
 import com.an.feige.feige.entity.FeigeSubscription;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,7 +42,16 @@ public class FeigeLetterService {
     private static final BigDecimal MIN_FLIGHT_HOURS = new BigDecimal("0.0833");
     private static final int MAX_SIGNATURE_LEN = 64;
     private static final int CLAIM_EXPIRE_HOURS = 72;
-    private static final long RECALL_GRACE_MS = 30L * 60 * 1000;
+    /** 召回宽限期默认值：规格5.3 为 30 分钟（避免误触）；测试/联调可用 FG_RECALL_GRACE_MINUTES=5 缩短便于验证 */
+    private static final long DEFAULT_RECALL_GRACE_MS = 30L * 60 * 1000;
+
+    /** 召回宽限期（毫秒），默认 30 分钟，feige.letter.recall-grace-minutes 可覆盖 */
+    private long recallGraceMs = DEFAULT_RECALL_GRACE_MS;
+
+    @Value("${feige.letter.recall-grace-minutes:30}")
+    public void setRecallGraceMinutes(int minutes) {
+        this.recallGraceMs = minutes > 0 ? minutes * 60 * 1000L : DEFAULT_RECALL_GRACE_MS;
+    }
     private static final String DATE_PATTERN = "yyyy-MM-dd HH:mm:ss";
 
     @Resource
@@ -269,7 +279,7 @@ public class FeigeLetterService {
             return err(409, "当前状态不允许召回", "RECALL_NOT_ALLOWED");
         }
         Date now = new Date();
-        if (now.before(new Date(letter.getDepartureTime().getTime() + RECALL_GRACE_MS))) {
+        if (now.before(new Date(letter.getDepartureTime().getTime() + recallGraceMs))) {
             return err(409, "尚未达到召回时间", "RECALL_TOO_EARLY");
         }
         if (now.after(letter.getClaimExpireTime())) {
@@ -644,7 +654,7 @@ public class FeigeLetterService {
             return false;
         }
         Date now = new Date();
-        return !now.before(new Date(letter.getDepartureTime().getTime() + RECALL_GRACE_MS))
+        return !now.before(new Date(letter.getDepartureTime().getTime() + recallGraceMs))
                 && (letter.getClaimExpireTime() == null || now.before(letter.getClaimExpireTime()));
     }
 
