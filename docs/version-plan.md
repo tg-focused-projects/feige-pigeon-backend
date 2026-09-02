@@ -71,13 +71,13 @@
 | V12-1 | 多鸽购买（第 2~6 只付费） | 15 | 订单/支付回调/权益发放幂等/退款规则（A1/A2/A7） | ✅ V4.2 回归通过：槽位模型（价格绑位置、买位置+选角色）——下单槽4+HUIHUI(600分)→confirm→PAID→入住槽4；同槽占位拦截；feige_order 表已建、PAID_PIGEON_ENABLED=true |
 | V12-2 | 鸽舍扩建与候选角色 | 15.4/15.5 | 鸽舍管理接口、空位置、PAID_PIGEON_ENABLED 开关（B7） | ✅ V4.2 回归通过：slots 物理位置模型（occupied/roleKey/amountFen/candidates/freeCount），免费创建自动分配最小空位 |
 | V12-3 | **七牛上传凭证** | 需求 | `POST /feige/upload/token`：空间 mgif、目录 feige/（参考 MaterialController#uploadToken；qiniu-java-sdk 7.13.0；fsize 1KB~100MB；mp4/mov 转码） | ✅ 开发完成，本地自测通过（token 策略验证：scope=mgif:feige/..、fsize 限制、mp4 转码） |
-| V12-4 | **真实虚拟支付（米大师 xpay）** | 官方文档+search111 参考实现 | 下单返回 payData（offerId/productId/signData/paySig/signature）→ 前端 wx.requestVirtualPayment → xpay_goods_deliver_notify 发货推送(主)+query_order 查单+notify_provide_goods 上报(兜底)；控制台新建并发布道具 | ✅ **开发完成，本地自测通过（V5.0）**：payData 下单/发货推送(GET验URL+AES解密+幂等发货)/退款推送/order/status/查单兜底 Job/真实模式拦截 confirm 防绕过——详见下方清单；契约更新至 V5.0 |
+| V12-4 | **真实虚拟支付（米大师 xpay）** | 官方文档+search111 参考实现 | 下单返回 payData（offerId/productId/signData/paySig/signature）→ 前端 wx.requestVirtualPayment → xpay_goods_deliver_notify 发货推送(主)+query_order 查单+notify_provide_goods 上报(兜底)；**道具 productId/价格配置于 feige_pay_goods 表（V5.1）** | ✅ **开发完成，本地自测通过（V5.0+V5.1）**：payData 下单/发货推送(GET验URL+AES解密+幂等发货)/退款推送/order/status/查单兜底 Job/真实模式拦截 confirm 防绕过/道具表驱动价格与productId——详见下方清单；契约更新至 V5.1 |
 
 **V1.2 执行顺序**（依赖关系）：
 1. **V12-2 开关与槽位**（PAID_PIGEON_ENABLED + slots 空位/候选/价格，先有模型）
 2. **V12-1 订单/支付**（下单 → 支付确认(mock) → 回调 → 权益发放幂等 → 退款）
 3. ✅ **真实虚拟支付接入（米大师 xpay）**（资格已通过 A2：控制台建道具 → 配置 OfferID/AppKey/发货推送 → 改造下单返回 payData → xpay 推送/查单/退款接入，关闭 mock）—— 代码待办见下方清单
-4. ⏳ **价格确认**（A1 定稿后改 FG_PIGEON_PRICES 默认值 + FG_PAY_GOODS_IDS 道具 ID）
+4. ⏳ **价格确认**（A1 定稿后 UPDATE feige_pay_goods.price_fen + 同步微信后台道具价格）
 
 ### ✅ 虚拟支付（米大师 xpay）接入清单（2026-09-02 资格已通过，对照官方文档重写）
 
@@ -95,7 +95,7 @@
 | 记录 3 个关键参数 | 虚拟支付 → 基本配置 | **OfferID**（=支付账号）、**现网 AppKey**（HMAC-SHA256 支付签名密钥；区分沙箱 AppKey/现网 AppKey）、AppID |
 | iOS 端可选开通 | 虚拟支付 → 基本配置 → 苹果 IAP | 需先配「小程序简称」（Apple display name 要求）；Apple 支付**不支持沙箱**，仅现网 |
 
-> **用户问题回答：是的，必须新建道具。** 鸽舍 5 个收费槽位建议各建一个道具（productId 对应 slotIndex），在后台配置道具价格并发布现网。价格单位「分」，须与 `FG_PIGEON_PRICES` 一致（wx.requestVirtualPayment 的 goodsPrice 会与后台道具价格校验，不一致报 -15013）。
+> **用户问题回答：是的，必须新建道具。** 鸽舍 5 个收费槽位建议各建一个道具（productId 对应 slotIndex），在微信后台配置道具价格并发布现网。**V5.1 起道具 productId/价格配置到数据库 `feige_pay_goods` 表**（slot_index/product_id/price_fen），下单 goodsPrice=price_fen，微信会与后台道具价格校验（不一致报 -15013）。
 
 #### 后端配置（测试机 env.conf / 生产环境变量）
 
@@ -106,7 +106,7 @@
 | **OfferID** | `FG_PAY_OFFER_ID=<offerid>` | 虚拟支付基本配置中的 offerid（= 支付账号），替代原 mch_id |
 | **现网 AppKey** | `FG_PAY_APP_KEY=<现网AppKey>` | 支付签名 paySig 密钥（hmac_sha256(appKey, uri+"&"+postBody)），替代原 API 证书体系 |
 | **小程序 AppID/Secret** | `FG_WECHAT_APPID / FG_WECHAT_SECRET`（已有） | 服务端 `/xpay/*` 接口（query_order/notify_provide_goods）需 `getAccessToken`（`cgi-bin/token`）；feige 的 `WeChatClient#getAccessToken` 已实现但为 private，需扩展复用 |
-| 槽位价格 | `FG_PIGEON_PRICES=0,100,300,600,1000,1500` | 单位分，对应第 2~6 槽位价格（A1 定稿后更新默认值） |
+| 槽位价格/道具 | 数据库 `feige_pay_goods` 表 | **V5.1 起以表为准**（productId+price_fen）；废弃 `FG_PIGEON_PRICES`/`FG_PAY_GOODS_IDS`（A1 定稿后 UPDATE price_fen + 同步微信后台） |
 | （原 mch_id/API 密钥配置废弃） | ~~FG_PAY_MCH_ID / FG_PAY_API_KEY~~ | 虚拟支付不是微信支付商户号体系，这两项不适用，删除 |
 
 #### 真实虚拟支付代码待办（当前为 mock 确认；对照官方文档 + 参考项目已跑通实现（search111 `SmallAppVipController`/`SoogifSmallAppVipController`/`WeiXinUtil`）补 4 块）
@@ -139,7 +139,7 @@
 
 | 平台 | 配置项 | 说明 |
 |---|---|---|
-| MP 后台 → 虚拟支付 | 道具管理 | **新建并发布 5 个道具（槽位2~6）**，价格=分，与 FG_PIGEON_PRICES 一致 |
+| MP 后台 → 虚拟支付 | 道具管理 | **新建并发布 5 个道具（槽位2~6）**，价格=分；**同步写入 feige_pay_goods 表**（product_id/price_fen 与后台一致） |
 | MP 后台 → 虚拟支付 | 发货推送配置 | 填 https 回调 URL（指向 `/feige/pay/notify`） |
 | MP 后台 → 虚拟支付 | 基础配置 | 记录 OfferID / 现网 AppKey / AppID |
 | MP 后台 → 虚拟支付 | iOS 支付（可选） | 先配「小程序简称」，Apple 支付仅现网环境 |
@@ -159,7 +159,7 @@
 - **iOS 可用性（重要更正）**：虚拟支付**支持 iOS**（Apple IAP 渠道，微信 ≥ 8.0.68、iOS ≥ 15、最低 1 元、仅大陆 App Store 账号）；但**结算走苹果**（约 45-60 天、12% Apple 佣金，含在费率里）。原「iOS 不可用需隐藏入口」的假设已过时——现在是 Android/鸿蒙/Windows/iOS 全终端可用，前端**不要**隐藏 iOS 购买入口，只需做微信版本/系统版本前置校验。
 - **费率**：工具/社交类目 Android 主动支付当前 1%（标准 10% 有活动），iOS 12%（全为 Apple 佣金）；技术服务费按虚拟支付流水结算。
 - **沙箱**：虚拟支付有沙箱环境（env=1 + 沙箱 AppKey），但**现网发布版 env 只能 0**（-15011）；Apple 支付不支持沙箱。联调建议用「现网 + 小额真单」验证。
-- **A1 价格确认**：默认 100/300/600/1000/1500 分（1/3/6/10/15 元），定稿后改 `FG_PIGEON_PRICES` **并同步道具后台价格**。
+- **A1 价格确认**：默认 100/300/600/1000/1500 分（1/3/6/10/15 元），定稿后 **UPDATE `feige_pay_goods`.price_fen 并同步微信后台道具价格**。
 - **A7 退款规则**：代码已实现退款不删历史（REFUNDED）、旅程完成后再停用；Android 平台可主动退款、iOS 只能用户发起；最终以平台规则为准。
 
 ---
@@ -214,6 +214,7 @@
 | 2026-09-02 | **虚拟支付资格已通过（A2 完成）**：对照官方文档确认支付体系为米大师 xpay（非微信支付 JSAPI），重写 V1.2 接入清单：控制台需建 5 个道具并发布 + 配发货推送 URL + 记 OfferID/现网 AppKey；后端改造为「下单返回 payData（signData/paySig/signature）→ wx.requestVirtualPayment → xpay_goods_deliver_notify 发货推送 + query_order 兜底」；澄清 iOS 实际可用（Apple IAP，非隐藏入口）；契约 V4.3 不变（行为未动，接入待开发） |
 | 2026-09-02 | **V1.2 支付清单补充 search111 参考实现细节**：核对已跑通项目（SmallAppVipController/SoogifSmallAppVipController/WeiXinUtil）：服务端 xpay 接口需 access_token；兜底查单确认支付后须再调 notify_provide_goods 上报发货；回调 XML 的 TransactionId 在顶层；幂等锚点参考「Redis 下单缓存/本地订单表」；签名用 HmacUtils.hmacSha256Hex（commons-codec）；新增「参考项目落地经验」小节与回调 GET 验 URL 说明 |
 | 2026-09-02 | **V1.2 真实虚拟支付接入完成（本地自测通过，契约 V5.0，feature/v1.2-virtual-pay）**：offer-id/app-key/goods-ids/mp-push 配置；WeChatClient access_token 缓存 + WxXPayClient(query_order/notify_provide_goods/paySig)；WxMsgCryptUtil（checkSignature + AES 兼容模式解密）；下单返回 payData（signData/paySig/signature，outTradeNo 8~32 位）；POST /feige/pay/notify（GET 验 URL + xpay_goods_deliver_notify 幂等发货 + xpay_refund_notify 退款）；GET /feige/order/status；FeigeXPayQueryJob 查单兜底；真实模式 confirm//pay/callback 拒绝（REAL_PAY_ENABLED）；本地全链路自测：payData 签名校验通过、加密推送→解密→确认→发鸽→退款推送→REFUNDED、幂等重复不重复发货；契约 V5.0；待测试机回归 |
+| 2026-09-02 | **V1.2 道具商品表化（契约 V5.1，feature/v1.2-goods-table）**：新增 feige_pay_goods 表（slot_index/product_id/price_fen/remark，slot_index 唯一）——槽位价格与微信道具 productId 以表为准（slots.amountFen/下单定价/signData.productId/goodsPrice 全表驱动）；slots 出参加 goodsConfigured（表未配置该槽位前端禁用购买）；表未配置槽位下单拒绝；废弃 FG_PIGEON_PRICES/FG_PAY_GOODS_IDS；本地自测通过（价格/productId 表驱动、删表拒单、恢复可购）；待测试机回归 |
 
 ---
 

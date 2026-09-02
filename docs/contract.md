@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V5.0 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V5.1 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V5.0**（2026-09-02，真实虚拟支付（米大师 xpay）接入：payData 下单、发货推送 notify、查单兜底；含 V4.3 及以下全部）
+> 版本：**V5.1**（2026-09-02，虚拟支付道具商品表 feige_pay_goods：槽位价格与 productId 由表驱动；含 V5.0 及以下全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://test.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -170,17 +170,17 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 错误：`PIGEON_NOT_FOUND` `RENAME_NOT_ALLOWED` `INVALID_ARGUMENT` `INVALID_SIGNATURE`
 
 ### `GET /feige/pigeon/journeys` — 鸽子旅程履历（**V3 新增**，无 sign）
-### `GET /feige/pigeon/slots` — 鸽舍槽位（**V4.2：槽位模型**，无 sign）
+### `GET /feige/pigeon/slots` — 鸽舍槽位（**V4.2：槽位模型；V5.1：价格表驱动**，无 sign）
 入参：`openid*`
-出参：`{ slots:[{ index, occupied, roleKey|null, name|null, status(IDLE|SENDING|EMPTY), deliveredCount, totalMileage, amountFen, paid }], candidates:[{ roleKey, name, motto }], freeCount, maxSlots:6, paidEnabled, mockPay }`
-说明：**位置模型（规格15.3）**：价格绑定第 N 个位置（位置1小白免费，2~6 价格递增），不绑定角色；`occupied` 表示该位置是否已入住；`candidates` 为尚未拥有的全部候选角色（买位置后从中选择入住）。
+出参：`{ slots:[{ index, occupied, roleKey|null, name|null, status(IDLE|SENDING|EMPTY), deliveredCount, totalMileage, amountFen, paid, goodsConfigured }], candidates:[{ roleKey, name, motto }], freeCount, maxSlots:6, paidEnabled, mockPay }`
+说明：**位置模型（规格15.3）**：价格绑定第 N 个位置（位置1小白免费，2~6 价格递增），不绑定角色；`occupied` 表示该位置是否已入住；`candidates` 为尚未拥有的全部候选角色（买位置后从中选择入住）。**V5.1**：`amountFen` 来自 `feige_pay_goods` 表（表未配置该槽位=0）；`goodsConfigured=false` 表示该收费槽位未配置商品（前端应禁用购买按钮）。
 
-### `POST /feige/pigeon/order` — 创建购买订单（**V4.2：买位置+选角色；V5.0：真实虚拟支付返回 payData**，form，需 sign）
+### `POST /feige/pigeon/order` — 创建购买订单（**V4.2：买位置+选角色；V5.0：真实虚拟支付返回 payData；V5.1：商品以表配置**，form，需 sign）
 入参：`openid* slotIndex* roleKey* session_key?`（规格15.5：点击空位置 → 选择候选角色 → 按位置价下单；`session_key` 用于算用户态签名 signature，前端 wx.login 当次有效）
-条件：`PAID_PIGEON_ENABLED=true`；`slotIndex` 2~6 且该位置空闲；角色合法且未拥有；该角色/位置无未完成订单（CREATED/PAID）。
-出参：`{ orderNo, roleKey, slotIndex, amountFen(分，按位置定价), status:"CREATED", mockPay, payData? }`
+条件：`PAID_PIGEON_ENABLED=true`；`slotIndex` 2~6 且该位置空闲；角色合法且未拥有；该角色/位置无未完成订单（CREATED/PAID）；**`feige_pay_goods` 表已配置该槽位商品**（V5.1：价格/productId 以表为准，未配置返回 `ORDER_CREATE_FAILED`）。
+出参：`{ orderNo, roleKey, slotIndex, amountFen(=表 price_fen), status:"CREATED", mockPay, payData? }`
 - **mock 模式**（offer-id/app-key 未配）：无 `payData`，前端调 `POST /pigeon/confirm` 模拟确认；
-- **真实虚拟支付模式**（V5.0，offer-id/app-key 已配）：`payData` = `{ signData(JSON串), paySig, signature, mode:"short_series_goods", outTradeNo }`，前端原样传给 `wx.requestVirtualPayment` 拉起微信支付；`paySig = hmac_sha256(appKey, "requestVirtualPayment&"+signData)`、`signature = hmac_sha256(sessionKey, signData)`。
+- **真实虚拟支付模式**（V5.0，offer-id/app-key 已配）：`payData` = `{ signData(JSON串), paySig, signature, mode:"short_series_goods", outTradeNo }`，前端原样传给 `wx.requestVirtualPayment` 拉起微信支付；`paySig = hmac_sha256(appKey, "requestVirtualPayment&"+signData)`、`signature = hmac_sha256(sessionKey, signData)`；`signData.productId` 来自表 `feige_pay_goods`、`goodsPrice=price_fen`。
 错误：`ORDER_CREATE_FAILED` `INVALID_SIGNATURE`
 
 ### `POST /feige/pigeon/confirm` — 支付确认（**V4 新增**，form，需 sign；仅 mock 模式可用）
@@ -218,7 +218,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 错误：`QINIU_NOT_CONFIGURED`
 
 
-**配置（V1.2/V5.0）**：`PAID_PIGEON_ENABLED`（规格15.6 开关，默认 false=免费创建兼容）、`FG_PIGEON_PRICES`（位置2~6价格分，默认 `0,100,300,600,1000,1500`，A1 待定）、`FG_PAY_OFFER_ID`（虚拟支付 OfferID）、`FG_PAY_APP_KEY`（虚拟支付现网 AppKey；两者齐全=真实支付模式，缺失=fallback mock）、`FG_PAY_GOODS_IDS`（道具 productId 逗号分隔，顺序对应槽位2~6）、`FG_PAY_MOCK`（mock 支付，默认 true 仅测试）、`FG_PAY_QUERY_POLL_ENABLED`（查单兜底定时任务开关，默认 false）、`FG_MP_PUSH_TOKEN/FG_MP_PUSH_AES_KEY/FG_MP_PUSH_ENCRYPT_MODE`（虚拟支付发货推送接收配置：token 验 URL、EncodingAESKey 解密、兼容模式=1）。
+**配置（V1.2/V5.1）**：`PAID_PIGEON_ENABLED`（规格15.6 开关，默认 false=免费创建兼容）、`FG_PAY_OFFER_ID`（虚拟支付 OfferID）、`FG_PAY_APP_KEY`（虚拟支付现网 AppKey；两者齐全=真实支付模式，缺失=fallback mock）、`FG_PAY_MOCK`（mock 支付，默认 true 仅测试）、`FG_PAY_QUERY_POLL_ENABLED`（查单兜底定时任务开关，默认 false）、`FG_MP_PUSH_TOKEN/FG_MP_PUSH_AES_KEY/FG_MP_PUSH_ENCRYPT_MODE`（虚拟支付发货推送接收配置：token 验 URL、EncodingAESKey 解密、兼容模式=1）。**槽位价格与微信道具 productId 自 V5.1 起配置在 `feige_pay_goods` 表**（slot_index 2~6 唯一；`product_id`=后台道具 ID、`price_fen`=分，两者须与微信「虚拟支付 → 道具管理」一致，否则下单报 -15013；**废弃** `FG_PIGEON_PRICES`/`FG_PAY_GOODS_IDS`）。
 
 入参：`openid* pigeonId*`
 出参：`{ pigeonId, name, roleKey, deliveredCount, totalMileage, farthestDistance, cities:[去过去重城市], journeys:[{ letterId, status, senderCity, recipientCity, distanceKm, flightHours, departureTime, arrivalTime, reply }] }`
@@ -258,6 +258,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V5.1 | 2026-09-02 | **虚拟支付道具商品表 feige_pay_goods**（slot_index/product_id/price_fen/remark）：槽位价格与微信道具 productId 以表为准（slots.amountFen、下单 amountFen、signData.productId/goodsPrice 全表驱动）；slots 出参加 goodsConfigured（表未配置该槽位则禁用购买）；表未配置槽位下单拒绝（ORDER_CREATE_FAILED）；废弃 FG_PIGEON_PRICES/FG_PAY_GOODS_IDS 环境变量 |
 | V5.0 | 2026-09-02 | **真实虚拟支付（米大师 xpay）接入**（资格已通过）：POST /pigeon/order 入参加 session_key、xpay 已配置时出参加 payData（signData/paySig/signature/mode 供 wx.requestVirtualPayment）；POST /feige/pay/notify 发货推送接收（GET 验 URL + 兼容模式 AES 解密；xpay_goods_deliver_notify 幂等确认发货 / xpay_refund_notify 退款置 REFUNDED）；GET /feige/order/status 订单状态轮询；confirm 与 pay/callback 在真实支付模式下拒绝（REAL_PAY_ENABLED）；FeigeXPayQueryJob 查单兜底 + notify_provide_goods 上报；orderNo 改 8~32 位；配置 FG_PAY_OFFER_ID/FG_PAY_APP_KEY/FG_PAY_GOODS_IDS/FG_PAY_QUERY_POLL_ENABLED/FG_MP_PUSH_*（废弃 FG_PAY_MCH_ID/FG_PAY_API_KEY） |
 | V4.3 | 2026-09-02 | 召回宽限期可配置：`FG_RECALL_GRACE_MINUTES`（默认 30 分钟=规格5.3，测试可设 5 便于验证） |
 | V4.2 | 2026-09-02 | V1.2 槽位模型（规格15.3/15.5）：feige_pigeon 加 slot_index+UNIQUE(openid,slot_index)；价格绑定位置、角色可选入住；POST /pigeon/order 入参改 slotIndex+roleKey；slots 返回物理位置+已入住角色+candidates 候选；支付权益按订单位置入住；免费创建自动分配最小空位 |

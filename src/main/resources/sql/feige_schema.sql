@@ -198,5 +198,21 @@ CREATE TABLE IF NOT EXISTS `feige_order` (
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='飞鸽传书-多鸽购买订单';
 
+-- ---------- 虚拟支付道具商品表（V5.1：真实虚拟支付商品配置，规格15 付费） ----------
+-- 取代环境变量 FG_PIGEON_PRICES/FG_PAY_GOODS_IDS 双源：槽位价格与微信道具 productId 以本表为准
+-- slot_index 2~6 收费槽位；product_id = 虚拟支付后台「道具管理」道具 ID；price_fen 与后台道具价格一致(分)
+-- 注意：product_id / price_fen 需人工与微信「虚拟支付 → 道具管理」发布的道具保持一致（价格不一致微信报 -15013）
+CREATE TABLE IF NOT EXISTS `feige_pay_goods` (
+  `id`         BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `slot_index` INT         NOT NULL                COMMENT '鸽舍位置序号(2~6)',
+  `product_id` VARCHAR(40) NOT NULL                COMMENT '微信虚拟支付道具productId(后台道具管理)',
+  `price_fen`  INT         NOT NULL                COMMENT '价格(分,须与后台道具价格一致)',
+  `remark`     VARCHAR(64) DEFAULT NULL            COMMENT '备注(如道具名/角色)',
+  `create_at`  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_at`  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_slot_index` (`slot_index`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='飞鸽传书-虚拟支付道具商品配置';
+
 -- ---------- 存量库升级（V4：订单表） ----------
 -- 已有库执行一次即可（建表语句幂等，直接复用上面 CREATE TABLE IF NOT EXISTS）
