@@ -35,18 +35,42 @@ feige:
     appid: ${FG_WECHAT_APPID:}
     secret: ${FG_WECHAT_SECRET:}
     # 到达通知订阅消息模板 ID（空=不推送，仅记日志）
-    arrival-template-id: ${FG_ARRIVAL_TEMPLATE_ID:}
+    arrival-template-id: ${FG_ARRIVAL_TEMPLATE_ID:PM7gZ6hVG8yOXGtcjWdsid2vmB_rKyt_ZtZJ7PfIdo4}
+    # 回信到达通知订阅消息模板 ID（空=不推送，仅记日志）
+    reply-arrival-template-id: ${FG_REPLY_ARRIVAL_TEMPLATE_ID:PM7gZ6hVG8yOXGtcjWdsid2vmB_rKyt_ZtZJ7PfIdo4}
     # 接口签名盐：sign = md5(openid + sign-secret)；本地默认值，上线需改
     sign-secret: ${FG_SIGN_SECRET:soogif-feige-dev-sign}
     # dev 模式登录兜底：true 时 jscode2session 用 jsCode 派生 openid，不调微信（本地联调用）
-    dev-login: true
+    dev-login: ${FG_DEV_LOGIN:true}
   lock:
     # 多实例部署分布式锁总开关；单实例保持 false 行为不变
     enabled: ${FG_LOCK_ENABLED:false}
     # 锁自动过期秒数：须大于扫描最长耗时、小于调度周期(60s)
     ttl-seconds: ${FG_LOCK_TTL_SECONDS:30}
+  pigeon:
+    # 多鸽付费能力开关（规格15.6 PAID_PIGEON_ENABLED）：false=第2~6只免费创建（无支付资格期兼容）；true=必须购买
+    paid-enabled: ${PAID_PIGEON_ENABLED:false}
+    # 鸽舍位置价格（分）：下标0=位置1(小白免费占位)，位置2~6价格递增（A1 待定，配置化可调）
+    prices: ${FG_PIGEON_PRICES:0,100,300,600,1000,1500}
+  pay:
+    # 微信支付凭证（虚拟支付资格申请中，A2：可留空；留空时 mock-pay=true 允许本地/测试环境模拟支付成功）
+    mch-id: ${FG_PAY_MCH_ID:}
+    api-key: ${FG_PAY_API_KEY:}
+    appid: ${FG_WECHAT_APPID:}
+    # mock 支付模式：凭证未配且为 true 时，confirm 接口直接置 PAID（仅限测试环境，生产必须 false）
+    mock-pay: ${FG_PAY_MOCK:true}
+  qiniu:
+    # 七牛云上传凭证（空间 mgif 不变，目录 feige/；凭证由环境变量注入）
+    access-key: ${FG_QINIU_ACCESS_KEY:}
+    secret-key: ${FG_QINIU_SECRET_KEY:}
+    bucket: ${FG_QINIU_BUCKET:mgif}
+    # 上传目录前缀（需求：/feige）
+    prefix: ${FG_QINIU_PREFIX:feige}
+    # 上传凭证有效期（秒）
+    expire-seconds: ${FG_QINIU_EXPIRE_SECONDS:3600}
 
 logging:
   level:
     com.an.feige: INFO
     org.mybatis: WARN
+

@@ -85,22 +85,31 @@ public class WeChatClient {
     }
 
     /**
-     * 推送小程序订阅消息（到达通知）。模板或 appid 未配置时静默跳过。
+     * 推送小程序订阅消息（到达通知，使用到达模板）。模板或 appid 未配置时静默跳过。
      */
     public boolean pushSubscribeMessage(String openid, String page, Map<String, Object> data) {
-        if (StringUtils.isBlank(arrivalTemplateId)) {
+        return pushSubscribeMessage(openid, page, data, arrivalTemplateId);
+    }
+
+    /**
+     * 推送小程序订阅消息（可指定模板 ID，用于到达/回信到达不同模板）。模板或 appid 未配置时静默跳过。
+     */
+    public boolean pushSubscribeMessage(String openid, String page, Map<String, Object> data,
+                                        String templateId) {
+        if (StringUtils.isBlank(templateId)) {
             return false;
         }
         try {
+            JSONObject body = new JSONObject();
+            body.put("touser", openid);
+            body.put("template_id", templateId);
+            body.put("page", page);
+            body.put("data", data);
+            log.info("订阅消息推送 body={} template={} openid={}", body.toJSONString(), templateId, openid);
             String accessToken = getAccessToken();
             if (StringUtils.isBlank(accessToken)) {
                 return false;
             }
-            JSONObject body = new JSONObject();
-            body.put("touser", openid);
-            body.put("template_id", arrivalTemplateId);
-            body.put("page", page);
-            body.put("data", data);
             JSONObject resp = JSONObject.parseObject(httpPostJson(SUBSCRIBE_SEND + "?access_token=" + accessToken,
                     body.toJSONString()));
             log.info("订阅消息推送结果 errcode={} openid={}", resp == null ? "-" : resp.getIntValue("errcode"), openid);

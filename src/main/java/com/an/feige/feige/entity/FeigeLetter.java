@@ -49,6 +49,12 @@ public class FeigeLetter {
 
     private BigDecimal recipientLng;
 
+    /** 标题(≤64 字，拆信后展示)。 */
+    private String title;
+
+    /** 落款(≤64 字，拆信后展示)。 */
+    private String signature;
+
     /** 正文(≤500 字，分享预览/未认领绝不返回，拆信后才返回)。 */
     private String content;
 
@@ -114,6 +120,12 @@ public class FeigeLetter {
 
     /** 是否已拆信(0/1)。 */
     private Integer read;
+
+    /** 往返会话ID：首信=自身letterId，回信=原信threadId（规格12.3）。 */
+    private String threadId;
+
+    /** 回信指向的原信件ID（首信为null）。 */
+    private String replyToLetterId;
 
     private Date createAt;
 
@@ -221,6 +233,22 @@ public class FeigeLetter {
 
     public void setRecipientLng(BigDecimal recipientLng) {
         this.recipientLng = recipientLng;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public String getSignature() {
+        return signature;
+    }
+
+    public void setSignature(String signature) {
+        this.signature = signature;
     }
 
     public String getContent() {
@@ -397,6 +425,22 @@ public class FeigeLetter {
 
     public void setNotified(Integer notified) {
         this.notified = notified;
+    }
+
+    public String getThreadId() {
+        return threadId;
+    }
+
+    public void setThreadId(String threadId) {
+        this.threadId = threadId;
+    }
+
+    public String getReplyToLetterId() {
+        return replyToLetterId;
+    }
+
+    public void setReplyToLetterId(String replyToLetterId) {
+        this.replyToLetterId = replyToLetterId;
     }
 
     public Integer getRead() {

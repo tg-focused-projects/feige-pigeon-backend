@@ -1,41 +1,59 @@
 package com.an.feige.feige.service;
 
+import com.an.feige.feige.mapper.FeigeLetterMapper;
 import com.an.feige.feige.mapper.FeigePigeonMapper;
+import com.an.feige.feige.entity.FeigeLetter;
 import com.an.feige.feige.entity.FeigePigeon;
+import com.an.feige.feige.entity.PigeonRole;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
  * 飞鸽传书-用户鸽子服务。
  *
- * <p>V1 每用户一只「小白」：首访初始化，之后随每次送达成长（经验/等级/速度/里程）。</p>
+ * <p>V1.1 多鸽体系（规格14.3/15.1）：最多6只首发角色，统一177km/h，
+ * 独立履历；首次进入自动获得免费「小白」（角色XIAOBAI），
+ * 其余角色由鸽舍创建/选择获得（V1.2 起第2~6只为付费权益）。</p>
  */
 @Service
 public class FeigePigeonService {
 
+    private static final Logger log = LoggerFactory.getLogger(FeigePigeonService.class);
     private static final BigDecimal DEFAULT_SPEED = new BigDecimal("177.00");
-    private static final BigDecimal SPEED_STEP = new BigDecimal("3");
-    private static final BigDecimal EXP_RATIO = new BigDecimal("10");
+    /** 每用户最多6只（规格15.1）。 */
+    private static final int MAX_PIGEONS = 6;
 
     @Resource
     private FeigePigeonMapper feigePigeonMapper;
 
-    /** 取用户鸽子，不存在则初始化「小白」。 */
+    @Resource
+    private FeigeLetterMapper feigeLetterMapper;
+    @Value("${feige.pigeon.paid-enabled:false}")
+    private boolean paidEnabled;
+
+    /** 取用户鸽子（小白），不存在则初始化「小白」（规格3.2：首次进入自动获得）。 */
     public FeigePigeon getOrInitByOpenid(String openid) {
-        FeigePigeon pigeon = feigePigeonMapper.selectByOpenid(openid);
+        FeigePigeon pigeon = feigePigeonMapper.selectByOpenidAndRole(openid, FeigePigeon.ROLE_XIAOBAI);
         if (pigeon != null) {
             return pigeon;
         }
         Date now = new Date();
         FeigePigeon fresh = new FeigePigeon();
         fresh.setOpenid(openid);
-        fresh.setName("小白");
+        fresh.setName(PigeonRole.defaultName(FeigePigeon.ROLE_XIAOBAI));
+        fresh.setRoleKey(FeigePigeon.ROLE_XIAOBAI);
+        fresh.setSlotIndex(1);
         fresh.setLevel(1);
         fresh.setExp(0);
         fresh.setSpeedKmh(DEFAULT_SPEED);
@@ -46,7 +64,16 @@ public class FeigePigeonService {
         fresh.setStatus(FeigePigeon.STATUS_IDLE);
         fresh.setCreateAt(now);
         fresh.setUpdateAt(now);
-        feigePigeonMapper.insertSelective(fresh);
+        try {
+            feigePigeonMapper.insertSelective(fresh);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 并发初始化：另一请求已建小白，幂等返回既有记录
+            FeigePigeon exists = feigePigeonMapper.selectByOpenidAndRole(openid, FeigePigeon.ROLE_XIAOBAI);
+            if (exists != null) {
+                return exists;
+            }
+            throw e;
+        }
         return fresh;
     }
 
@@ -56,6 +83,16 @@ public class FeigePigeonService {
 
     public FeigePigeon getById(Long id) {
         return id == null ? null : feigePigeonMapper.selectByPrimaryKey(id);
+    }
+
+    /** 按角色查用户鸽子（V1.2 权益/重复购买判断）。 */
+    public FeigePigeon getByOpenidAndRole(String openid, String roleKey) {
+        return feigePigeonMapper.selectByOpenidAndRole(openid, roleKey);
+    }
+
+    /** 按位置查用户鸽子（V1.2 槽位模型：该位置是否已入住）。 */
+    public FeigePigeon getByOpenidAndSlot(String openid, Integer slotIndex) {
+        return slotIndex == null ? null : feigePigeonMapper.selectByOpenidAndSlot(openid, slotIndex);
     }
 
     /** 置鸽子为送信中；返回是否成功（空闲才能放飞）。 */
@@ -68,6 +105,164 @@ public class FeigePigeonService {
         if (id != null) {
             feigePigeonMapper.markIdle(id, new Date());
         }
+    }
+
+    /**
+     * 鸽舍全部鸽子（规格16.3）：首次进入自动获得小白（规格3.2）。
+     */
+    public List<FeigePigeon> listByOpenid(String openid) {
+        getOrInitByOpenid(openid);
+        return feigePigeonMapper.selectListByOpenid(openid);
+    }
+
+    /**
+     * 创建指定角色鸽子（规格14.3/15.5）：同一用户不能重复拥有同一角色。
+     *
+     * @return 创建成功返回鸽子；角色非法/已拥有/超过6只上限返回 null
+     */
+    public FeigePigeon createByRole(String openid, String roleKey) {
+        if (!PigeonRole.isValid(roleKey)) {
+            return null;
+        }
+        if (paidEnabled && !FeigePigeon.ROLE_XIAOBAI.equals(roleKey)) {
+            // 付费开关开启：第2~6只必须走订单权益发放，禁止直接创建
+            log.warn("付费开关开启，拒绝直接创建鸽子 openid={} roleKey={}", openid, roleKey);
+            return null;
+        }
+        // 先确保小白存在并占 slot 1（免费创建的角色从 slot 2 起分配）
+        getOrInitByOpenid(openid);
+        if (feigePigeonMapper.selectByOpenidAndRole(openid, roleKey) != null) {
+            return null;
+        }
+        if (feigePigeonMapper.selectListByOpenid(openid).size() >= MAX_PIGEONS) {
+            return null;
+        }
+        // 自动分配最小空位（开关关闭=免费扩建路径；slot 1 已被小白占，从 2 起）
+        Integer slot = nextFreeSlot(openid);
+        if (slot == null) {
+            return null;
+        }
+        return insertPigeon(openid, roleKey, slot);
+    }
+
+    /**
+     * 支付权益发放专用创建（规格15.5）：仅支付确认路径调用，不受 paid-enabled 开关拦截。
+     * 在指定位置入住（购买哪个位置就住哪个位置，价格绑定位置）。
+     * 幂等：已拥有/该位置已占用/超上限返回 null。
+     */
+    public FeigePigeon grantByRole(String openid, String roleKey, Integer slotIndex) {
+        if (!PigeonRole.isValid(roleKey)) {
+            return null;
+        }
+        // 先确保小白存在并占 slot 1（用户可能先直接支付购买，尚未初始化小白）
+        getOrInitByOpenid(openid);
+        if (feigePigeonMapper.selectByOpenidAndRole(openid, roleKey) != null) {
+            return null;
+        }
+        if (slotIndex == null || slotIndex <= 1 || slotIndex > MAX_PIGEONS) {
+            return null;
+        }
+        if (feigePigeonMapper.selectByOpenidAndSlot(openid, slotIndex) != null) {
+            return null;
+        }
+        if (feigePigeonMapper.selectListByOpenid(openid).size() >= MAX_PIGEONS) {
+            return null;
+        }
+        return insertPigeon(openid, roleKey, slotIndex);
+    }
+
+    /** 该用户鸽舍最小的空闲位置（1~6），满员返回 null。 */
+    private Integer nextFreeSlot(String openid) {
+        List<Integer> used = feigePigeonMapper.selectSlotIndexesByOpenid(openid);
+        for (int i = 1; i <= MAX_PIGEONS; i++) {
+            if (!used.contains(i)) {
+                return i;
+            }
+        }
+        return null;
+    }
+
+    private FeigePigeon insertPigeon(String openid, String roleKey, Integer slotIndex) {
+        Date now = new Date();
+        FeigePigeon fresh = new FeigePigeon();
+        fresh.setOpenid(openid);
+        fresh.setName(PigeonRole.defaultName(roleKey));
+        fresh.setRoleKey(roleKey);
+        fresh.setSlotIndex(slotIndex);
+        fresh.setLevel(1);
+        fresh.setExp(0);
+        fresh.setSpeedKmh(DEFAULT_SPEED);
+        fresh.setStamina(3);
+        fresh.setDeliveredCount(0);
+        fresh.setTotalMileage(BigDecimal.ZERO);
+        fresh.setFarthestDistance(BigDecimal.ZERO);
+        fresh.setStatus(FeigePigeon.STATUS_IDLE);
+        fresh.setCreateAt(now);
+        fresh.setUpdateAt(now);
+        try {
+            feigePigeonMapper.insertSelective(fresh);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 并发：同角色或同位置已被占用，视为失败（调用方按已占用处理）
+            log.warn("鸽子创建唯一键冲突 openid={} roleKey={} slot={}", openid, roleKey, slotIndex);
+            return null;
+        }
+        return fresh;
+    }
+
+    /**
+     * 鸽子改名（规格3.2：首次送达后邀请改名；≤12字）。
+     *
+     * @return 更新行数；0 表示鸽子不存在
+     */
+    public int rename(Long pigeonId, String name) {
+        if (pigeonId == null || name == null || name.trim().isEmpty()) {
+            return 0;
+        }
+        String safe = name.trim().length() > 12 ? name.trim().substring(0, 12) : name.trim();
+        return feigePigeonMapper.rename(pigeonId, safe, new Date());
+    }
+
+    /**
+     * 旅程履历（规格14.2）：累计里程/送达次数/最远/去过城市/单次旅程履历。
+     * 每趟旅程保存原始事实（起飞/到达/距离/时长/起终城市），供未来成就/邮戳复用。
+     */
+    public Map<String, Object> journeys(FeigePigeon pigeon) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("pigeonId", pigeon.getId());
+        data.put("name", pigeon.getName());
+        data.put("roleKey", pigeon.getRoleKey());
+        data.put("deliveredCount", pigeon.getDeliveredCount());
+        data.put("totalMileage", pigeon.getTotalMileage());
+        data.put("farthestDistance", pigeon.getFarthestDistance());
+        data.put("cities", feigeLetterMapper.selectCitiesByPigeon(pigeon.getId()));
+
+        List<Map<String, Object>> journeys = new ArrayList<>();
+        for (FeigeLetter letter : feigeLetterMapper.selectJourneysByPigeon(pigeon.getId())) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("letterId", letter.getLetterId());
+            item.put("status", letter.getStatus());
+            item.put("senderCity", joinCity(letter.getSenderProvince(), letter.getSenderCity()));
+            item.put("recipientCity", joinCity(letter.getRecipientProvince(), letter.getRecipientCity()));
+            item.put("distanceKm", letter.getDistanceKm());
+            item.put("flightHours", letter.getFlightHours());
+            item.put("departureTime", formatDate(letter.getDepartureTime()));
+            item.put("arrivalTime", formatDate(letter.getArrivalTime()));
+            item.put("reply", letter.getReplyToLetterId() != null);
+            journeys.add(item);
+        }
+        data.put("journeys", journeys);
+        return data;
+    }
+
+    private String joinCity(String province, String city) {
+        if (city == null || city.trim().isEmpty()) {
+            return province == null ? "" : province;
+        }
+        return (province == null ? "" : province) + " · " + city;
+    }
+
+    private String formatDate(Date date) {
+        return date == null ? "" : new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(date);
     }
 
     /**
@@ -85,57 +280,17 @@ public class FeigePigeonService {
         update.setUpdateAt(new Date());
         update.setStatus(FeigePigeon.STATUS_IDLE);
 
-        int beforeLevel = pigeon.getLevel();
-        int deltaExp = distanceKm.divide(EXP_RATIO, 0, RoundingMode.FLOOR).intValue();
-        int exp = pigeon.getExp() + deltaExp;
-        int level = pigeon.getLevel();
-        BigDecimal speed = safe(pigeon.getSpeedKmh());
-        while (exp >= level * 100) {
-            exp -= level * 100;
-            level++;
-            speed = speed.add(SPEED_STEP);
-        }
-        update.setExp(exp);
-        update.setLevel(level);
-        update.setSpeedKmh(speed);
+        // V1 按产品规格 14.1：不计算/展示等级、经验、升级与提速，仅累积真实旅程数据
         feigePigeonMapper.settleDelivery(update);
 
         Map<String, Object> snap = new HashMap<>();
-        snap.put("deltaExp", deltaExp);
-        snap.put("beforeLevel", beforeLevel);
-        snap.put("afterLevel", level);
-        snap.put("afterExp", exp);
-        snap.put("afterSpeed", speed);
-        snap.put("levelUp", level > beforeLevel ? 1 : 0);
+        snap.put("deltaExp", 0);
+        snap.put("beforeLevel", 0);
+        snap.put("afterLevel", 0);
+        snap.put("afterExp", 0);
+        snap.put("afterSpeed", safe(pigeon.getSpeedKmh()));
+        snap.put("levelUp", 0);
         return snap;
-    }
-
-    /** 送达结算：累计/最远/里程，经验+距离/10，满足阈值升级提速，置回空闲。返回结算后的最新鸽子。 */
-    public FeigePigeon settleDelivery(FeigePigeon pigeon, BigDecimal distanceKm) {
-        FeigePigeon update = new FeigePigeon();
-        update.setId(pigeon.getId());
-        update.setDeliveredCount(pigeon.getDeliveredCount() + 1);
-        BigDecimal total = safe(pigeon.getTotalMileage()).add(distanceKm);
-        update.setTotalMileage(total);
-        update.setFarthestDistance(safe(pigeon.getFarthestDistance()).max(distanceKm));
-        update.setUpdateAt(new Date());
-        update.setStatus(FeigePigeon.STATUS_IDLE);
-
-        // 经验 & 升级
-        int deltaExp = distanceKm.divide(EXP_RATIO, 0, RoundingMode.FLOOR).intValue();
-        int exp = pigeon.getExp() + deltaExp;
-        int level = pigeon.getLevel();
-        BigDecimal speed = safe(pigeon.getSpeedKmh());
-        while (exp >= level * 100) {
-            exp -= level * 100;
-            level++;
-            speed = speed.add(SPEED_STEP);
-        }
-        update.setExp(exp);
-        update.setLevel(level);
-        update.setSpeedKmh(speed);
-        feigePigeonMapper.settleDelivery(update);
-        return getById(pigeon.getId());
     }
 
     private BigDecimal safe(BigDecimal value) {

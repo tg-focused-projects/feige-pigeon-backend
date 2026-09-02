@@ -8,6 +8,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.util.Date;
+import java.util.List;
 
 /**
  * 飞鸽传书-用户鸽子 Mapper（注解式，不走 XML）。
@@ -18,14 +19,15 @@ public interface FeigePigeonMapper {
 
     String COLS = "id, openid, name, level, exp, speed_kmh AS speedKmh, stamina, "
             + "delivered_count AS deliveredCount, total_mileage AS totalMileage, "
-            + "farthest_distance AS farthestDistance, status, "
+            + "farthest_distance AS farthestDistance, role_key AS roleKey, slot_index AS slotIndex, status, "
             + "create_at AS createAt, update_at AS updateAt";
+
 
     @Insert("INSERT INTO feige_pigeon "
             + "(openid, name, level, exp, speed_kmh, stamina, delivered_count, total_mileage, "
-            + " farthest_distance, status, create_at, update_at) "
+            + " farthest_distance, role_key, slot_index, status, create_at, update_at) "
             + "VALUES (#{openid}, #{name}, #{level}, #{exp}, #{speedKmh}, #{stamina}, #{deliveredCount}, "
-            + " #{totalMileage}, #{farthestDistance}, #{status}, #{createAt}, #{updateAt})")
+            + " #{totalMileage}, #{farthestDistance}, #{roleKey}, #{slotIndex}, #{status}, #{createAt}, #{updateAt})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insertSelective(FeigePigeon record);
 
@@ -48,10 +50,34 @@ public interface FeigePigeonMapper {
             + "WHERE id = #{id} AND status = 'SENDING'")
     int markIdle(@Param("id") Long id, @Param("updateAt") Date updateAt);
 
-    /** 送达结算：累计 deliver/里程/最远/经验，可能升级提速，并置回空闲。 */
-    @Update("UPDATE feige_pigeon SET level = #{level}, exp = #{exp}, speed_kmh = #{speedKmh}, "
+    /** 送达结算（V1 规格 14.1：不更新等级/经验/速度，仅累计真实旅程数据并置回空闲）。 */
+    @Update("UPDATE feige_pigeon SET "
             + "delivered_count = #{deliveredCount}, total_mileage = #{totalMileage}, "
             + "farthest_distance = #{farthestDistance}, status = #{status}, update_at = #{updateAt} "
             + "WHERE id = #{id}")
     int settleDelivery(FeigePigeon record);
+
+    /** 我的全部鸽子（鸽舍，规格16.3：一个主角+一排栖木）。 */
+    @Select("SELECT " + COLS + " FROM feige_pigeon WHERE openid = #{openid} ORDER BY id ASC")
+    List<FeigePigeon> selectListByOpenid(@Param("openid") String openid);
+
+    /** 按角色查鸽子（同一用户不能重复拥有同一角色，规格15.5）。 */
+    @Select("SELECT " + COLS + " FROM feige_pigeon WHERE openid = #{openid} AND role_key = #{roleKey} LIMIT 1")
+    FeigePigeon selectByOpenidAndRole(@Param("openid") String openid, @Param("roleKey") String roleKey);
+
+    /** 改名（首次送达后邀请，规格3.2）。 */
+    @Update("UPDATE feige_pigeon SET name = #{name}, update_at = #{updateAt} WHERE id = #{id}")
+    int rename(@Param("id") Long id, @Param("name") String name, @Param("updateAt") Date updateAt);
+
+    /** 按位置查鸽子（位置是否已被占用，规格15.5：空位置才能扩建）。 */
+    @Select("SELECT " + COLS + " FROM feige_pigeon WHERE openid = #{openid} AND slot_index = #{slotIndex} LIMIT 1")
+    FeigePigeon selectByOpenidAndSlot(@Param("openid") String openid, @Param("slotIndex") Integer slotIndex);
+
+    /** 鸽舍已占用的最小位置集合（分配最小空位用）。 */
+    @Select("SELECT slot_index FROM feige_pigeon WHERE openid = #{openid} ORDER BY slot_index ASC")
+    List<Integer> selectSlotIndexesByOpenid(@Param("openid") String openid);
+
+    /** 我的全部鸽子按位置排序（鸽舍展示）。 */
+    @Select("SELECT " + COLS + " FROM feige_pigeon WHERE openid = #{openid} ORDER BY slot_index ASC, id ASC")
+    List<FeigePigeon> selectListByOpenidOrderSlot(@Param("openid") String openid);
 }
