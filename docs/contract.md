@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V4.1 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V4.2 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V4.1**（2026-09-02，V1.2 补充：七牛上传凭证接口；含 V1.2 付费与 V1.1 全部）
+> 版本：**V4.2**（2026-09-02，V1.2 槽位模型：价格绑定位置+角色可选入住，对齐规格15.3/15.5；含七牛凭证与 V1.1 全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://test.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -170,20 +170,20 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 错误：`PIGEON_NOT_FOUND` `RENAME_NOT_ALLOWED` `INVALID_ARGUMENT` `INVALID_SIGNATURE`
 
 ### `GET /feige/pigeon/journeys` — 鸽子旅程履历（**V3 新增**，无 sign）
-### `GET /feige/pigeon/slots` — 鸽舍槽位（**V4 新增**，无 sign）
+### `GET /feige/pigeon/slots` — 鸽舍槽位（**V4.2：槽位模型**，无 sign）
 入参：`openid*`
-出参：`{ slots:[{ index, roleKey, name|null, status(IDLE|SENDING|EMPTY), deliveredCount, totalMileage, amountFen, paid, motto }], freeCount, maxSlots:6, paidEnabled, mockPay }`
-说明：第1位小白免费；空位置展示候选角色与价格（规格15.4/16.3）。
+出参：`{ slots:[{ index, occupied, roleKey|null, name|null, status(IDLE|SENDING|EMPTY), deliveredCount, totalMileage, amountFen, paid }], candidates:[{ roleKey, name, motto }], freeCount, maxSlots:6, paidEnabled, mockPay }`
+说明：**位置模型（规格15.3）**：价格绑定第 N 个位置（位置1小白免费，2~6 价格递增），不绑定角色；`occupied` 表示该位置是否已入住；`candidates` 为尚未拥有的全部候选角色（买位置后从中选择入住）。
 
-### `POST /feige/pigeon/order` — 创建购买订单（**V4 新增**，form，需 sign）
-入参：`openid* roleKey*`
-条件：`PAID_PIGEON_ENABLED=true`（开关关闭返回 `ORDER_CREATE_FAILED`）；角色合法且非小白；未拥有该角色；该角色无 PAID 订单。
-出参：`{ orderNo, roleKey, slotIndex, amountFen(分), status:"CREATED" }`
+### `POST /feige/pigeon/order` — 创建购买订单（**V4.2：买位置+选角色**，form，需 sign）
+入参：`openid* slotIndex* roleKey*`（规格15.5：点击空位置 → 选择候选角色 → 按位置价下单）
+条件：`PAID_PIGEON_ENABLED=true`；`slotIndex` 2~6 且该位置空闲；角色合法且未拥有；该角色/位置无未完成订单（CREATED/PAID）。
+出参：`{ orderNo, roleKey, slotIndex, amountFen(分，按位置定价), status:"CREATED" }`
 错误：`ORDER_CREATE_FAILED` `INVALID_SIGNATURE`
 
 ### `POST /feige/pigeon/confirm` — 支付确认（**V4 新增**，form，需 sign；mock 支付）
 入参：`openid* orderNo* payTradeNo?`
-说明：支付资格申请中（A2）凭证未配时，`FG_PAY_MOCK=true` 允许直接确认（仅测试环境；生产必须走微信回调 `/pay/callback`）。确认成功置订单 `PAID` 并发放权益（创建鸽子，幂等）。
+说明：支付资格申请中（A2）凭证未配时，`FG_PAY_MOCK=true` 允许直接确认（仅测试环境；生产必须走微信回调 `/pay/callback`）。确认成功置订单 `PAID` 并在**订单位置**发放权益（创建鸽子入住该位置，幂等：角色已拥有/位置已占/重复回调均不重复发放）。
 出参：`{ orderNo, roleKey, slotIndex, amountFen, status:"PAID", paid:true }`
 错误：`ORDER_NOT_FOUND` `ORDER_STATE_INVALID` `INVALID_SIGNATURE`
 
@@ -223,7 +223,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 ## 6. 数据表（新库 `feige_pigeon`）
 
 - `fg_user`：openid/session_key/nickname/face/mobile/app_type/status
-- `feige_pigeon`：openid/name/level/exp/speed_kmh/stamina/delivered_count/total_mileage/farthest_distance/**role_key**/status；UNIQUE(openid, role_key)
+- `feige_pigeon`：openid/name/level/exp/speed_kmh/stamina/delivered_count/total_mileage/farthest_distance/role_key/**slot_index**(1~6)/status；UNIQUE(openid, role_key) + UNIQUE(openid, slot_index)
 - `feige_letter`：letter_id/share_token/sender_*/recipient_*/title/signature/content/image_url/pigeon_id/pigeon_name/speed_kmh/distance_km/flight_hours/departure_time/arrival_time/claim_expire_time/claimed_at/recalled_at/expired_at/status/settled/settled_at/settle_*/subscribed/notified/read/thread_id/reply_to_letter_id/create_at/update_at
 - `feige_letter_event`：letter_id/seq/type/title/description/at_time；`UNIQUE(letter_id,seq)`
 - `feige_subscription`（**V3 新增**）：letter_id/openid/type(ARRIVAL|REPLY_ARRIVAL)/notified/notified_at/subscribed_at；`UNIQUE(letter_id,openid,type)`
@@ -246,6 +246,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 | V3.1 | 2026-09-01 | V11-8 通知接通：订阅模板审核通过并适配（thing1/time2/thing3/thing4 字段，发件人/收件人区分文案）；WeChatClient 推送支持指定模板 ID；yml 默认填入模板 ID |
 | V3.2 | 2026-09-01 | share-preview 返参新增 senderSignature（发件落款）、departureTime（发出时间），对齐规格6.1 认领前展示 |
 | V4.0 | 2026-09-02 | V1.2 付费能力：feige_order 订单表、PAID_PIGEON_ENABLED 开关（规格15.6）、GET /pigeon/slots（空位/候选/价格）、POST /pigeon/order、POST /pigeon/confirm（mock）、POST /pay/callback（支付回调）、GET /pigeon/orders；支付确认幂等发放权益、退款不删历史（规格15.5）；价格配置 FG_PIGEON_PRICES（A1 待定） |
+| V4.2 | 2026-09-02 | V1.2 槽位模型（规格15.3/15.5）：feige_pigeon 加 slot_index+UNIQUE(openid,slot_index)；价格绑定位置、角色可选入住；POST /pigeon/order 入参改 slotIndex+roleKey；slots 返回物理位置+已入住角色+candidates 候选；支付权益按订单位置入住；免费创建自动分配最小空位 |
 | V4.1 | 2026-09-02 | V1.2 补充：POST /feige/upload/token 七牛上传凭证（空间 mgif/目录 feige/，参考 MaterialController#uploadToken；qiniu-java-sdk 7.13.0） |
 | V2.0 | 2026-09-01 | 路径去 `/small-soogif`；send/bind/reply 改 JSON；新增 title/signature、isSendLetter、坐标兜底、5分钟保底、回信直达、往返字段、信箱列表；关闭等级/经验结算 |
 | V1.3 | 2026-08-27 | 旧版契约（路径含 /small-soogif，form 入参，无 V2 字段） |
