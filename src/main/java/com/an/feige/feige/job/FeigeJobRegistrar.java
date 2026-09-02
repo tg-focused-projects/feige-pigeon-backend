@@ -49,10 +49,12 @@ public class FeigeJobRegistrar implements ApplicationListener<ContextRefreshedEv
                     SCAN_CRON, "feigeArrivalScanTrigger");
             register(scheduler, "feigeUnclaimedExpireScan", FeigeUnclaimedExpireJob.class,
                     SCAN_CRON, "feigeUnclaimedExpireScanTrigger");
+            register(scheduler, "feigeXPayQueryScan", FeigeXPayQueryJob.class,
+                    SCAN_CRON, "feigeXPayQueryScanTrigger");
             if (!scheduler.isStarted()) {
                 scheduler.start();
             }
-            logger.info("飞鸽传书定时任务已注册：arrivalScan / unclaimedExpireScan，cron={}", SCAN_CRON);
+            logger.info("飞鸽传书定时任务已注册：arrivalScan / unclaimedExpireScan / xpayQueryScan，cron={}", SCAN_CRON);
         } catch (Exception e) {
             logger.error("飞鸽传书定时任务注册失败", e);
         }

@@ -63,4 +63,9 @@ public interface FeigeOrderMapper {
     /** 用户全部订单（鸽舍购买记录展示）。 */
     @Select("SELECT " + COLS + " FROM feige_order WHERE openid = #{openid} ORDER BY id DESC")
     List<FeigeOrder> selectByOpenid(@Param("openid") String openid);
+
+    /** 查单兜底：CREATED 且创建早于某时间点（下单后未支付/推送丢失的待确认单，一般仅查最近 N 分钟避免扫历史）。 */
+    @Select("SELECT " + COLS + " FROM feige_order WHERE status = 'CREATED' "
+            + "AND create_at <= #{before} AND create_at >= #{after} ORDER BY id ASC")
+    List<FeigeOrder> selectCreatedBetween(@Param("after") Date after, @Param("before") Date before);
 }
