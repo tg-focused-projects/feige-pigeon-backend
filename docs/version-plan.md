@@ -221,6 +221,7 @@
 | 2026-09-03 | **share-preview 新增返参 pigeonRoleKey（契约 V6.1，feature/share-preview-pigeon-rolekey）**：分享预览返回送信鸽子角色（pigeon_id 关联 feige_pigeon 查 role_key；鸽子缺失/旧信无绑定为 null）；本地自测通过（发信→share-preview 返回 XIAOBAI）；✅ 测试机回归通过（develop 5d9b877，HUIHUI/ASHAN 角色验证） |
 | 2026-09-03 | **letter/list 列表项新增鸽子信息（契约 V6.2，feature/letter-list-pigeon-info）**：inbox/sent 列表每项返回 pigeonId/pigeonName（信件冗余字段）+ pigeonRoleKey（pigeon_id 关联 feige_pigeon）；历史信/无绑定为 null；本地自测通过（inbox+sent 返回小白/PANGDUN 角色映射正确）；待测试机回归 |
 | 2026-09-03 | **letter/flight 新增顶层返参 pigeonRoleKey（契约 V6.3，feature/flight-pigeon-rolekey）**：飞行页返回送信鸽子角色（pigeon_id 关联 feige_pigeon；历史信/无绑定为 null；未认领/已归巢/飞行各分支均返回）；本地自测通过（FLYING_UNCLAIMED 与 IN_FLIGHT 均返回 XIAOBAI）；待测试机回归 |
+| 2026-09-03 | **订阅消息昵称改用 feige_pigeon.name（契约 V6.4，feature/subscribe-pigeon-name）**：到达/回信到达推送文案鸽子名由 letter 快照改为按 pigeon_id 实时查 feige_pigeon.name（改名后推送同步新名，查不到回退快照→信鸽）；本地自测通过（鸽子改名阿白→推送 thing1/thing3 用新名）；待测试机回归 |
 
 ---
 
