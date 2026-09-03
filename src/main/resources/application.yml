@@ -65,6 +65,8 @@ feige:
     mock-pay: ${FG_PAY_MOCK:true}
     # 查单兜底开关（生产 true；关闭则只靠发货推送）
     query-poll-enabled: ${FG_PAY_QUERY_POLL_ENABLED:false}
+    # 订单超时分钟数（V12-5：CREATED 未支付超时自动取消，释放槽位/角色占位；默认 15 分钟）
+    order-expire-minutes: ${FG_ORDER_EXPIRE_MINUTES:15}
   mp-push:
     # 虚拟支付「发货推送配置」消息推送（接收 xpay_goods_deliver_notify）
     # token：GET 验 URL（checkSignature）用

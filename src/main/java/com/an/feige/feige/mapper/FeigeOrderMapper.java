@@ -68,4 +68,9 @@ public interface FeigeOrderMapper {
     @Select("SELECT " + COLS + " FROM feige_order WHERE status = 'CREATED' "
             + "AND create_at <= #{before} AND create_at >= #{after} ORDER BY id ASC")
     List<FeigeOrder> selectCreatedBetween(@Param("after") Date after, @Param("before") Date before);
+
+    /** 订单超时扫描：CREATED 且创建早于某时间点（V12-5 超时自动取消，释放槽位/角色占位）。 */
+    @Select("SELECT " + COLS + " FROM feige_order WHERE status = 'CREATED' "
+            + "AND create_at <= #{before} ORDER BY id ASC")
+    List<FeigeOrder> selectCreatedBefore(@Param("before") Date before);
 }
