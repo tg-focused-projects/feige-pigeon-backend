@@ -590,7 +590,20 @@ public class FeigeLetterService {
         return ok(data);
     }
 
-    /** 认领成功后确定性生成飞行日志（同信件重试不重复；含起飞与抵达记录）。 */
+    /**
+     * 认领成功后确定性生成飞行日志（同信件重试不重复；含起飞与抵达记录）。
+     *
+     * <p>中途随机事件数量按飞行时长设定（起飞/抵达固定记录）：
+     * <pre>
+     *   &lt;10 分钟      ：0 条
+     *   10分钟–2小时   ：1 条
+     *   2–8 小时       ：2 条
+     *   8–16 小时      ：3 条
+     *   16–24 小时     ：4 条
+     *   ≥24 小时       ：5 条
+     * </pre>
+     * 中途事件在飞行时间轴上近似均匀分布；事件确定性生成（letterId 作随机种子），不重复插入。
+     */
     private void generateEvents(FeigeLetter letter, Date departure, Date arrival) {
         String letterId = letter.getLetterId();
         if (!feigeLetterEventMapper.selectByLetterId(letterId).isEmpty()) {
@@ -602,7 +615,6 @@ public class FeigeLetterService {
                 "它带着你的信，开始了这段旅程。", departure));
 
         Random rnd = new Random(letterId.hashCode());
-        double[] fractions = {0.25, 0.5, 0.72, 0.9};
         String[][] pool = {
                 {FeigeLetterEvent.TYPE_CITY_OVER, "飞过一片云海", "脚下是连绵的云。"},
                 {FeigeLetterEvent.TYPE_COUNTERWIND, "遇到了一阵逆风", "它多花了些力气。"},
@@ -612,17 +624,54 @@ public class FeigeLetterService {
                 {FeigeLetterEvent.TYPE_FOOD, "偷吃了点干粮", "补充体力后继续赶路。"},
                 {FeigeLetterEvent.TYPE_DRIFT, "原地转了个圈", "像是认路认错了方向。"}
         };
-        int seq = 2;
-        for (double fraction : fractions) {
-            String[] item = pool[rnd.nextInt(pool.length)];
-            long at = departure.getTime() + (long) (flightMs * fraction);
-            events.add(buildEvent(letterId, seq++, item[0], item[1], item[2], new Date(at)));
+        // 中途随机事件数：按飞行时长设定（见类注释档位），并留出起/降两端余量后均匀分布
+        int midCount = midEventCountByDuration(flightMs);
+        if (midCount > 0) {
+            int seq = 2;
+            double[] fractions = spreadFractions(midCount);
+            for (double fraction : fractions) {
+                String[] item = pool[rnd.nextInt(pool.length)];
+                long at = departure.getTime() + (long) (flightMs * fraction);
+                events.add(buildEvent(letterId, seq++, item[0], item[1], item[2], new Date(at)));
+            }
         }
+        int seq = events.size() + 1;
         events.add(buildEvent(letterId, seq, FeigeLetterEvent.TYPE_ARRIVE, "信鸽抵达了",
                 "它把这封信交到了你手里。", arrival));
         for (FeigeLetterEvent event : events) {
             feigeLetterEventMapper.insertSelective(event);
         }
+    }
+
+    /**
+     * 中途随机事件数量档位（按飞行时长，起飞/抵达固定记录不计入）。
+     */
+    private int midEventCountByDuration(long flightMs) {
+        double hours = flightMs / 3600_000.0;
+        if (hours < 10.0 / 60.0) {          // < 10 分钟
+            return 0;
+        } else if (hours < 2.0) {           // 10分钟 – 2 小时
+            return 1;
+        } else if (hours < 8.0) {           // 2 – 8 小时
+            return 2;
+        } else if (hours < 16.0) {          // 8 – 16 小时
+            return 3;
+        } else if (hours < 24.0) {          // 16 – 24 小时
+            return 4;
+        }
+        return 5;                           // ≥ 24 小时
+    }
+
+    /**
+     * 把 n 个中途事件在 (0,1) 开区间内均匀分布（避开起飞/抵达时刻本身）：
+     * n=1 → 0.5；n=2 → 1/3, 2/3；n=3 → 1/4, 2/4, 3/4；…（时间轴上均分）
+     */
+    private double[] spreadFractions(int count) {
+        double[] fractions = new double[count];
+        for (int i = 0; i < count; i++) {
+            fractions[i] = (i + 1.0) / (count + 1.0);
+        }
+        return fractions;
     }
 
     private FeigeLetterEvent buildEvent(String letterId, int seq, String type, String title,

@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V5.2 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V6.0 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V5.2**（2026-09-03，订单占位释放：下单自动覆盖旧 CREATED 单 + 超时自动取消；含 V5.1 及以下全部）
+> 版本：**V6.0**（2026-09-03，飞行日志按飞行时长设定中途事件条数：<10min 0条 … ≥24h 5条；含 V5.2 及以下全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://demo.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式；⚠️ `test.soogif.com` 指向生产 TKE 集群，切勿用于测试）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -107,6 +107,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 未认领：`{ status:FLYING_UNCLAIMED, departureTime, claimExpireTime, serverTime, progress:null, flownKm:null, remainKm:null, totalKm:null, arrivalTime:null, canRecall, subscribed, flightLog:[] }`
 已认领/回信：`{ status, departureTime, arrivalTime, serverTime, distanceKm, progress, flownKm, remainKm, totalKm, flightLog, subscribed }`
 **V3 新增字段**：`subscribedArrival`（是否订阅当前鸽子抵达）、`subscribedReplyArrival`（是否订阅回信抵达）；`subscribed` 兼容保留（=subscribedArrival）。
+**flightLog 条数（V6.0 起按飞行时长）**：固定含起飞(DEPART)+抵达(ARRIVE)；中途随机事件按飞行时长设定——<10分钟 0条 / 10分钟–2小时 1条 / 2–8小时 2条 / 8–16小时 3条 / 16–24小时 4条 / ≥24小时 5条，中途事件沿时间轴均匀分布。
 错误：`LETTER_NOT_FOUND` `ACCESS_DENIED`
 
 ### `GET /feige/letter/detail` — 收信/拆信
@@ -259,6 +260,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V6.0 | 2026-09-03 | **飞行日志按飞行时长设定中途事件条数**：generateEvents 中途随机事件数改为按时长分档（<10min:0 / 10min–2h:1 / 2–8h:2 / 8–16h:3 / 16–24h:4 / ≥24h:5），中途事件沿时间轴均匀分布（替代原固定 4 条）；起飞+抵达固定记录；文案池保留 7 种；确定性生成+幂等不变 |
 | V5.2 | 2026-09-03 | **订单占位释放**（V12-5）：POST /pigeon/order 同角色/同位置存活 CREATED 旧单自动取消后建新单（方案A覆盖，PAID/REFUNDED 不覆盖）；新增 FeigeOrderExpireJob 每分钟扫 CREATED 且超时（`FG_ORDER_EXPIRE_MINUTES` 默认 15）自动置 CANCELLED 释放占位；事务原子（下单+覆盖）；无前端主动取消接口 |
 | V5.1 | 2026-09-02 | **虚拟支付道具商品表 feige_pay_goods**（slot_index/product_id/price_fen/remark）：槽位价格与微信道具 productId 以表为准（slots.amountFen、下单 amountFen、signData.productId/goodsPrice 全表驱动）；slots 出参加 goodsConfigured（表未配置该槽位则禁用购买）；表未配置槽位下单拒绝（ORDER_CREATE_FAILED）；废弃 FG_PIGEON_PRICES/FG_PAY_GOODS_IDS 环境变量 |
 | V5.0 | 2026-09-02 | **真实虚拟支付（米大师 xpay）接入**（资格已通过）：POST /pigeon/order 入参加 session_key、xpay 已配置时出参加 payData（signData/paySig/signature/mode 供 wx.requestVirtualPayment）；POST /feige/pay/notify 发货推送接收（GET 验 URL + 兼容模式 AES 解密；xpay_goods_deliver_notify 幂等确认发货 / xpay_refund_notify 退款置 REFUNDED）；GET /feige/order/status 订单状态轮询；confirm 与 pay/callback 在真实支付模式下拒绝（REAL_PAY_ENABLED）；FeigeXPayQueryJob 查单兜底 + notify_provide_goods 上报；orderNo 改 8~32 位；配置 FG_PAY_OFFER_ID/FG_PAY_APP_KEY/FG_PAY_GOODS_IDS/FG_PAY_QUERY_POLL_ENABLED/FG_MP_PUSH_*（废弃 FG_PAY_MCH_ID/FG_PAY_API_KEY） |
