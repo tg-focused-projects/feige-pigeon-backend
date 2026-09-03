@@ -5,14 +5,15 @@
 ## 铁律：迭代流程
 
 1. **功能开发**在 feature worktree（基于 `develop` 创建）
-2. **本地自测**：worktree 内 JDK8 编译 + 启动自测通过，代码才算可合并
-3. **合并 develop**：`--no-ff` 合并 + 推送远端
+2. **本地自测（合并前置门禁）**：worktree 内 JDK8 编译 + 启动自测通过，代码才算可合并
+3. **合并 develop**：`--no-ff` 合并 + 推送远端 —— **⚠️ 前置条件：第 2 条本地自测必须已通过（编译无错 + 核心链路启动验证），未自测不得执行 merge；自测过程与结论须在最终回复/commit 中可见**
 4. **测试机回归**：发布服务器执行 `sh /data/deploy/feige_git_release.sh develop` 部署测试机，跑全链路回归（发信→认领→到信→拆信→回信→信箱），通过后才算完成
 5. **main 归人工所有**：main 分支的任何操作（commit / merge / push）都由人工执行，AI 不触碰 main
 6. **生产发布**：main 打 tag → Docker 镜像（发布机 `build_feigepigeon_images.sh`）→ 腾讯云
 
 > **本地自测标准流程见 `docs/local-dev-test.md`**（JDK8/mvn/mysql 本机路径、schema 幂等坑、
-> dev 登录+sign、支付 mock/发货推送模拟等可复制命令）。修改涉及支付/订单/鸽子/DB 时必须按该手册自测。
+> dev 登录+sign、支付 mock/发货推送模拟等可复制命令）。修改涉及支付/订单/鸽子/DB 时必须按该手册自测；
+> 自测含：JDK8 编译通过 + 应用本地启动成功（探活 200）+ 本次改动核心用例 curl 断言通过。
 
 ## 运维操作（⚠️ 人工触发，勿自动执行）
 

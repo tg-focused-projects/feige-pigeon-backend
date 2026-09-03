@@ -223,10 +223,10 @@
 ## 迭代流程（固定，2026-09-01 起）
 
 1. **功能开发**：feature worktree（基于 develop）
-2. **本地自测**：worktree 内 JDK8 启动服务自测（本地 DB/Redis），通过才算可合并
-3. **合并 develop**：--no-ff 合并 + 推送
+2. **本地自测（合并前置门禁）**：worktree 内 JDK8 启动服务自测（本地 DB/Redis），通过才算可合并；标准流程见 `docs/local-dev-test.md`
+3. **合并 develop**：--no-ff 合并 + 推送 —— **⚠️ 必须第 2 步自测已通过（编译无错+启动探活 200+核心用例断言），未自测不得 merge；自测过程与结论须在最终回复/commit 中可见**
 4. **测试机部署**：发布服务器 `feige_git_release.sh develop` → 测试机全链路回归
 5. **合入 main**：测试机通过后 → main（生产基线）
 6. **发生产**：main 打 tag → Docker 镜像 → 腾讯云
 
-> 铁律：未经本地 worktree 自测的代码不得合并 develop；未经测试机回归不得合 main。
+> 铁律：未经本地 worktree 自测的代码不得合并 develop（自测 = JDK8 编译通过 + 本地启动探活 200 + 本次改动核心用例 curl 断言，见 `docs/local-dev-test.md`）；未经测试机回归不得合 main。
