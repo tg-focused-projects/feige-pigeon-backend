@@ -1,8 +1,8 @@
-# 《飞鸽传书》独立后端 接口契约（V4.2 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V6.2 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V4.2**（2026-09-02，V1.2 槽位模型：价格绑定位置+角色可选入住，对齐规格15.3/15.5；含七牛凭证与 V1.1 全部）
-> 基础地址：本地 `http://localhost:8098`；**测试环境 `http://test.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式）
+> 版本：**V6.2**（2026-09-03，letter/list 列表项新增 pigeonId/pigeonName/pigeonRoleKey；含 V6.1 及以下全部）
+> 基础地址：本地 `http://localhost:8098`；**测试环境 `http://demo.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式；⚠️ `test.soogif.com` 指向生产 TKE 集群，切勿用于测试）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
 > 登录：自研 `WeChatClient`（jscode2session/订阅推送），不做 union 绑定
@@ -58,7 +58,7 @@
 ```
 send(departure_time=server now, status=FLYING_UNCLAIMED, thread_id=自身)
    ├─ 认领(claim_expire_time>now, 原子) ─> IN_FLIGHT ─(arrival_time<=now)─> ARRIVED ─(拆信)─> DELIVERED
-   ├─ 发件人召回(≥30min, 未认领) ─> RECALLED(终态, 分享失效)
+   ├─ 发件人召回(≥recall_grace 默认30min, 未认领) ─> RECALLED(终态, 分享失效)
    └─ 72h 未认领 ─> UNCLAIMED_EXPIRED(终态, 分享失效)
 
 reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 不再认领/分享) ─> ARRIVED ─> DELIVERED
@@ -86,8 +86,8 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 ### `GET /feige/letter/share-preview` — 分享预览（不产生状态变更；返回发件落款与起飞时间，不返回正文/标题/精确坐标）
 入参：`shareToken* openid?`
-出参：`{ claimStatus:"AVAILABLE|CLAIMED_BY_ME|CLAIMED_BY_OTHER|RECALLED|EXPIRED", letterId, senderProvince, senderCity, **senderSignature**, **departureTime**, pigeonName, serverTime }`
-（`senderSignature` 发件落款，可为空；`departureTime` 信件发出时间 `yyyy-MM-dd HH:mm:ss`。规格6.1：认领前可展示落款与起飞时间。）
+出参：`{ claimStatus:"AVAILABLE|CLAIMED_BY_ME|CLAIMED_BY_OTHER|RECALLED|EXPIRED", letterId, senderProvince, senderCity, **senderSignature**, **departureTime**, pigeonName, **pigeonRoleKey**(V6.1 新增), serverTime }`
+（`senderSignature` 发件落款，可为空；`departureTime` 信件发出时间 `yyyy-MM-dd HH:mm:ss`；`pigeonRoleKey` 送信鸽子角色（XIAOBAI/PANGDUN/…），鸽子缺失或旧信无绑定为 null。规格6.1：认领前可展示落款与起飞时间。）
 错误：`LETTER_NOT_FOUND`
 
 ### `POST /feige/letter/bind` — 原子认领（JSON body）
@@ -98,7 +98,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 ### `POST /feige/letter/recall` — 发件人免费召回（form）
 入参：`letterId* openid*`
-条件：`sender` + `FLYING_UNCLAIMED` + `now>=departure+30min` + `now<claim_expire_time` + `recipient IS NULL`
+条件：`sender` + `FLYING_UNCLAIMED` + `now>=departure+recall_grace`（默认30min，可配 `FG_RECALL_GRACE_MINUTES`）+ `now<claim_expire_time` + `recipient IS NULL`
 出参：`{ recalled:true, recalledAt }`
 错误：`LETTER_NOT_FOUND` `ACCESS_DENIED` `RECALL_TOO_EARLY` `CLAIM_EXPIRED` `RECALL_NOT_ALLOWED` `ALREADY_CLAIMED`
 
@@ -107,6 +107,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 未认领：`{ status:FLYING_UNCLAIMED, departureTime, claimExpireTime, serverTime, progress:null, flownKm:null, remainKm:null, totalKm:null, arrivalTime:null, canRecall, subscribed, flightLog:[] }`
 已认领/回信：`{ status, departureTime, arrivalTime, serverTime, distanceKm, progress, flownKm, remainKm, totalKm, flightLog, subscribed }`
 **V3 新增字段**：`subscribedArrival`（是否订阅当前鸽子抵达）、`subscribedReplyArrival`（是否订阅回信抵达）；`subscribed` 兼容保留（=subscribedArrival）。
+**flightLog 条数（V6.0 起按飞行时长）**：固定含起飞(DEPART)+抵达(ARRIVE)；中途随机事件按飞行时长设定——<10分钟 0条 / 10分钟–2小时 1条 / 2–8小时 2条 / 8–16小时 3条 / 16–24小时 4条 / ≥24小时 5条，中途事件沿时间轴均匀分布。
 错误：`LETTER_NOT_FOUND` `ACCESS_DENIED`
 
 ### `GET /feige/letter/detail` — 收信/拆信
@@ -132,11 +133,12 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 - 同信+同人+同类型重复订阅幂等（刷新订阅时间）。
 错误：`LETTER_NOT_FOUND` `ACCESS_DENIED` `INVALID_ARGUMENT` `INVALID_SIGNATURE`
 
-### `GET /feige/letter/list` — 信箱列表（**V2 新增**）
+### `GET /feige/letter/list` — 信箱列表（**V2 新增**；V6.2 列表项加送信鸽子信息）
 入参：`openid* type?(inbox|sent, 默认inbox) page?(默认0) size?(默认20, ≤50)`
 - inbox（来信）：`recipient_openid=openid`，排序 `ARRIVED > IN_FLIGHT > DELIVERED > RECALLED > 其他`
 - sent（寄出）：`sender_openid=openid`，按时间倒序
-出参：`{ total, page, size, list:[{ letterId, shareToken, status, title, senderCity, recipientCity, departureTime, arrivalTime, createAt, threadId, replyToLetterId, canRecall }] }`
+出参：`{ total, page, size, list:[{ letterId, shareToken, status, title, senderCity, recipientCity, departureTime, arrivalTime, createAt, threadId, replyToLetterId, canRecall, pigeonId, pigeonName, pigeonRoleKey(V6.2 新增) }] }`
+（`pigeonId/pigeonName` 来自信件冗余字段；`pigeonRoleKey` 按 pigeon_id 关联 feige_pigeon 查 role_key；历史信/无鸽子绑定为 null。）
 错误：`INVALID_ARGUMENT`
 
 ### `POST /feige/report` — 内容投诉（**V3 新增**，JSON body）
@@ -170,27 +172,43 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 错误：`PIGEON_NOT_FOUND` `RENAME_NOT_ALLOWED` `INVALID_ARGUMENT` `INVALID_SIGNATURE`
 
 ### `GET /feige/pigeon/journeys` — 鸽子旅程履历（**V3 新增**，无 sign）
-### `GET /feige/pigeon/slots` — 鸽舍槽位（**V4.2：槽位模型**，无 sign）
+### `GET /feige/pigeon/slots` — 鸽舍槽位（**V4.2：槽位模型；V5.1：价格表驱动**，无 sign）
 入参：`openid*`
-出参：`{ slots:[{ index, occupied, roleKey|null, name|null, status(IDLE|SENDING|EMPTY), deliveredCount, totalMileage, amountFen, paid }], candidates:[{ roleKey, name, motto }], freeCount, maxSlots:6, paidEnabled, mockPay }`
-说明：**位置模型（规格15.3）**：价格绑定第 N 个位置（位置1小白免费，2~6 价格递增），不绑定角色；`occupied` 表示该位置是否已入住；`candidates` 为尚未拥有的全部候选角色（买位置后从中选择入住）。
+出参：`{ slots:[{ index, occupied, roleKey|null, name|null, status(IDLE|SENDING|EMPTY), deliveredCount, totalMileage, amountFen, paid, goodsConfigured }], candidates:[{ roleKey, name, motto }], freeCount, maxSlots:6, paidEnabled, mockPay }`
+说明：**位置模型（规格15.3）**：价格绑定第 N 个位置（位置1小白免费，2~6 价格递增），不绑定角色；`occupied` 表示该位置是否已入住；`candidates` 为尚未拥有的全部候选角色（买位置后从中选择入住）。**V5.1**：`amountFen` 来自 `feige_pay_goods` 表（表未配置该槽位=0）；`goodsConfigured=false` 表示该收费槽位未配置商品（前端应禁用购买按钮）。
 
-### `POST /feige/pigeon/order` — 创建购买订单（**V4.2：买位置+选角色**，form，需 sign）
-入参：`openid* slotIndex* roleKey*`（规格15.5：点击空位置 → 选择候选角色 → 按位置价下单）
-条件：`PAID_PIGEON_ENABLED=true`；`slotIndex` 2~6 且该位置空闲；角色合法且未拥有；该角色/位置无未完成订单（CREATED/PAID）。
-出参：`{ orderNo, roleKey, slotIndex, amountFen(分，按位置定价), status:"CREATED" }`
+### `POST /feige/pigeon/order` — 创建购买订单（**V4.2：买位置+选角色；V5.0：真实虚拟支付返回 payData；V5.1：商品以表配置**，form，需 sign）
+入参：`openid* slotIndex* roleKey* session_key?`（规格15.5：点击空位置 → 选择候选角色 → 按位置价下单；`session_key` 用于算用户态签名 signature，前端 wx.login 当次有效）
+条件：`PAID_PIGEON_ENABLED=true`；`slotIndex` 2~6 且该位置无鸽子；角色合法且未拥有（鸽子校验）；**`feige_pay_goods` 表已配置该槽位商品**（价格/productId 以表为准，未配置返回 `ORDER_CREATE_FAILED`）。
+**V5.2 占位释放**：同角色或同位置的**存活 CREATED 旧单**在下单时被自动置 CANCELLED 再建新单（覆盖式：换角色/换槽/重下永不被旧单拦截；PAID/REFUNDED 不覆盖——已支付/已拥有的角色或已占位置仍由鸽子校验拒绝）。
+出参：`{ orderNo, roleKey, slotIndex, amountFen(=表 price_fen), status:"CREATED", mockPay, payData? }`
+- **mock 模式**（offer-id/app-key 未配）：无 `payData`，前端调 `POST /pigeon/confirm` 模拟确认；
+- **真实虚拟支付模式**（V5.0，offer-id/app-key 已配）：`payData` = `{ signData(JSON串), paySig, signature, mode:"short_series_goods", outTradeNo }`，前端原样传给 `wx.requestVirtualPayment` 拉起微信支付；`paySig = hmac_sha256(appKey, "requestVirtualPayment&"+signData)`、`signature = hmac_sha256(sessionKey, signData)`；`signData.productId` 来自表 `feige_pay_goods`、`goodsPrice=price_fen`。
 错误：`ORDER_CREATE_FAILED` `INVALID_SIGNATURE`
 
-### `POST /feige/pigeon/confirm` — 支付确认（**V4 新增**，form，需 sign；mock 支付）
+### `POST /feige/pigeon/confirm` — 支付确认（**V4 新增**，form，需 sign；仅 mock 模式可用）
 入参：`openid* orderNo* payTradeNo?`
-说明：支付资格申请中（A2）凭证未配时，`FG_PAY_MOCK=true` 允许直接确认（仅测试环境；生产必须走微信回调 `/pay/callback`）。确认成功置订单 `PAID` 并在**订单位置**发放权益（创建鸽子入住该位置，幂等：角色已拥有/位置已占/重复回调均不重复发放）。
+说明：**真实虚拟支付模式（offer-id/app-key 已配）下该接口直接拒绝（`REAL_PAY_ENABLED`）**，支付确认只能由微信发货推送 `/feige/pay/notify` 或查单兜底触发，防绕过支付。mock 模式下（`FG_PAY_MOCK=true` 且凭证未配）允许直接确认（仅测试环境）。确认成功置订单 `PAID` 并在**订单位置**发放权益（创建鸽子入住该位置，幂等：角色已拥有/位置已占/重复回调均不重复发放）。
 出参：`{ orderNo, roleKey, slotIndex, amountFen, status:"PAID", paid:true }`
-错误：`ORDER_NOT_FOUND` `ORDER_STATE_INVALID` `INVALID_SIGNATURE`
+错误：`ORDER_NOT_FOUND` `ORDER_STATE_INVALID` `INVALID_SIGNATURE` `REAL_PAY_ENABLED`
 
-### `POST /feige/pay/callback` — 微信支付回调（**V4 新增**，JSON body，服务端对服务端）
+### `POST /feige/pay/notify` — 虚拟支付发货推送接收（**V5.0 新增**，XML，微信平台→服务端）
+- **GET**（URL 校验）：微信后台「发货推送配置」保存时带 `signature/timestamp/nonce/echostr` 验 URL；校验 `sha1(sort(token,timestamp,nonce))==signature`（token=`feige.mp-push.token`），通过回 echostr。
+- **POST**（推送）：兼容模式密文 `{ <Encrypt> }` → AES 解密（`feige.mp-push.aes-key`）→ 解析业务 XML：
+  - `Event=xpay_goods_deliver_notify`：按 `OutTradeNo` 确认支付（幂等 CREATED→PAID，在**订单位置**发鸽入住），写 `pay_trade_no=TransactionId`，随后调 `/xpay/notify_provide_goods` 上报发货完成；返回 `success`。
+  - `Event=xpay_refund_notify`：按 `MchOrderId`(=orderNo) 置订单 `REFUNDED`（鸽子保留，规格15.5）。
+  - 其它事件：记日志返回 success。
+说明：处理异常也返回 success（防微信 15 次重试风暴；漏单由查单兜底定时任务补）。响应格式：`success` 纯文本（微信接受空/success/ErrCode XML 三种）。
+
+### `POST /feige/pay/callback` — 旧 mock 确认回调（**V4 新增，V5.0 起真实模式禁用**，JSON body）
 入参：`{ orderNo, payTradeNo }`
-说明：支付结果以后端回调为准（规格15.5）；资格开通后接入微信验签。幂等：重复回调不重复发放权益。
+说明：真实虚拟支付模式（offer-id/app-key 已配）直接拒绝（`REAL_PAY_ENABLED`）——支付确认统一走 `/feige/pay/notify`；mock 模式下保留（幂等：重复回调不重复发放权益）。
 出参：`{ orderNo, roleKey, status:"PAID", paid:true }`
+
+### `GET /feige/order/status` — 订单状态查询（**V5.0 新增**，前端支付结果轮询，无 sign）
+入参：`orderNo* openid*`
+出参：`{ orderNo, roleKey, slotIndex, amountFen, status(CREATED|PAID|REFUNDED|CANCELLED), paid }`
+说明：仅本人可查（openid 归属校验，否则 `ORDER_NOT_FOUND`）；前端 wx.requestVirtualPayment 回调后 2~3s 轮询，PAID 即权益已发放（跳鸽舍/入住动画），超时 60s 提示「支付结果确认中」。
 
 ### `GET /feige/pigeon/orders` — 我的购买订单（**V4 新增**，无 sign）
 入参：`openid*`
@@ -203,7 +221,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 错误：`QINIU_NOT_CONFIGURED`
 
 
-**配置（V1.2）**：`PAID_PIGEON_ENABLED`（规格15.6 开关，默认 false=免费创建兼容）、`FG_PIGEON_PRICES`（位置2~6价格分，默认 `0,100,300,600,1000,1500`，A1 待定）、`FG_PAY_MCH_ID/FG_PAY_API_KEY`（微信支付凭证，A2 申请中可空）、`FG_PAY_MOCK`（mock 支付，默认 true 仅测试）。
+**配置（V1.2/V5.1）**：`PAID_PIGEON_ENABLED`（规格15.6 开关，默认 false=免费创建兼容）、`FG_PAY_OFFER_ID`（虚拟支付 OfferID）、`FG_PAY_APP_KEY`（虚拟支付现网 AppKey；两者齐全=真实支付模式，缺失=fallback mock）、`FG_PAY_MOCK`（mock 支付，默认 true 仅测试）、`FG_PAY_QUERY_POLL_ENABLED`（查单兜底定时任务开关，默认 false）、`FG_MP_PUSH_TOKEN/FG_MP_PUSH_AES_KEY/FG_MP_PUSH_ENCRYPT_MODE`（虚拟支付发货推送接收配置：token 验 URL、EncodingAESKey 解密、兼容模式=1）。**槽位价格与微信道具 productId 自 V5.1 起配置在 `feige_pay_goods` 表**（slot_index 2~6 唯一；`product_id`=后台道具 ID、`price_fen`=分，两者须与微信「虚拟支付 → 道具管理」一致，否则下单报 -15013；**废弃** `FG_PIGEON_PRICES`/`FG_PAY_GOODS_IDS`）。
 
 入参：`openid* pigeonId*`
 出参：`{ pigeonId, name, roleKey, deliveredCount, totalMileage, farthestDistance, cities:[去过去重城市], journeys:[{ letterId, status, senderCity, recipientCity, distanceKm, flightHours, departureTime, arrivalTime, reply }] }`
@@ -216,6 +234,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 - `FeigeArrivalJob`：`IN_FLIGHT AND arrival_time<=now` → `ARRIVED` + 鸽子 `IDLE` + 旅程数据结算（无经验）+ 到达通知（按订阅表）。
 - `FeigeUnclaimedExpireJob`：`FLYING_UNCLAIMED AND claim_expire_time<=now` → `UNCLAIMED_EXPIRED` + 鸽子 `IDLE`。
+- `FeigeXPayQueryJob`（V5.0，`FG_PAY_QUERY_POLL_ENABLED=true` 时生效）：扫描最近 10 分钟仍 CREATED 的订单，调微信 `/xpay/query_order` 查单；`status∈{2,3,4}`（已支付）则确认支付发权益 + 调 `/xpay/notify_provide_goods` 上报发货（发货推送丢失兜底）。
 - 多副本部署需 `FG_LOCK_ENABLED=true` + Redis（`FG_REDIS_HOST/PORT/PASSWORD`），锁 TTL 默认 30s（`FG_LOCK_TTL_SECONDS`）。
 
 ---
@@ -242,6 +261,13 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V6.2 | 2026-09-03 | **letter/list 列表项新增送信鸽子信息**：每项返回 pigeonId（信件冗余字段）、pigeonName（冗余字段）、pigeonRoleKey（按 pigeon_id 关联 feige_pigeon 查 role_key；无绑定为 null）；inbox 与 sent 均生效 |
+| V6.1 | 2026-09-03 | **share-preview 返参新增 pigeonRoleKey**：分享预览返回送信鸽子角色（按 pigeon_id 关联 feige_pigeon 查 role_key；鸽子缺失/旧信无绑定为 null） |
+| V6.0 | 2026-09-03 | **飞行日志按飞行时长设定中途事件条数**：generateEvents 中途随机事件数改为按时长分档（<10min:0 / 10min–2h:1 / 2–8h:2 / 8–16h:3 / 16–24h:4 / ≥24h:5），中途事件沿时间轴均匀分布（替代原固定 4 条）；起飞+抵达固定记录；文案池保留 7 种；确定性生成+幂等不变 |
+| V5.2 | 2026-09-03 | **订单占位释放**（V12-5）：POST /pigeon/order 同角色/同位置存活 CREATED 旧单自动取消后建新单（方案A覆盖，PAID/REFUNDED 不覆盖）；新增 FeigeOrderExpireJob 每分钟扫 CREATED 且超时（`FG_ORDER_EXPIRE_MINUTES` 默认 15）自动置 CANCELLED 释放占位；事务原子（下单+覆盖）；无前端主动取消接口 |
+| V5.1 | 2026-09-02 | **虚拟支付道具商品表 feige_pay_goods**（slot_index/product_id/price_fen/remark）：槽位价格与微信道具 productId 以表为准（slots.amountFen、下单 amountFen、signData.productId/goodsPrice 全表驱动）；slots 出参加 goodsConfigured（表未配置该槽位则禁用购买）；表未配置槽位下单拒绝（ORDER_CREATE_FAILED）；废弃 FG_PIGEON_PRICES/FG_PAY_GOODS_IDS 环境变量 |
+| V5.0 | 2026-09-02 | **真实虚拟支付（米大师 xpay）接入**（资格已通过）：POST /pigeon/order 入参加 session_key、xpay 已配置时出参加 payData（signData/paySig/signature/mode 供 wx.requestVirtualPayment）；POST /feige/pay/notify 发货推送接收（GET 验 URL + 兼容模式 AES 解密；xpay_goods_deliver_notify 幂等确认发货 / xpay_refund_notify 退款置 REFUNDED）；GET /feige/order/status 订单状态轮询；confirm 与 pay/callback 在真实支付模式下拒绝（REAL_PAY_ENABLED）；FeigeXPayQueryJob 查单兜底 + notify_provide_goods 上报；orderNo 改 8~32 位；配置 FG_PAY_OFFER_ID/FG_PAY_APP_KEY/FG_PAY_GOODS_IDS/FG_PAY_QUERY_POLL_ENABLED/FG_MP_PUSH_*（废弃 FG_PAY_MCH_ID/FG_PAY_API_KEY） |
+| V4.3 | 2026-09-02 | 召回宽限期可配置：`FG_RECALL_GRACE_MINUTES`（默认 30 分钟=规格5.3，测试可设 5 便于验证） |
 | V4.2 | 2026-09-02 | V1.2 槽位模型（规格15.3/15.5）：feige_pigeon 加 slot_index+UNIQUE(openid,slot_index)；价格绑定位置、角色可选入住；POST /pigeon/order 入参改 slotIndex+roleKey；slots 返回物理位置+已入住角色+candidates 候选；支付权益按订单位置入住；免费创建自动分配最小空位 |
 | V4.1 | 2026-09-02 | V1.2 补充：POST /feige/upload/token 七牛上传凭证（空间 mgif/目录 feige/，参考 MaterialController#uploadToken；qiniu-java-sdk 7.13.0） |
 | V4.0 | 2026-09-02 | V1.2 付费能力：feige_order 订单表、PAID_PIGEON_ENABLED 开关（规格15.6）、GET /pigeon/slots（空位/候选/价格）、POST /pigeon/order、POST /pigeon/confirm（mock）、POST /pay/callback（支付回调）、GET /pigeon/orders；支付确认幂等发放权益、退款不删历史（规格15.5）；价格配置 FG_PIGEON_PRICES（A1 待定） |

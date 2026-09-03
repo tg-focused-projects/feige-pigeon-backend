@@ -18,6 +18,7 @@ target/
 deploy/*.local.conf
 deploy/tools/*.local
 *.local.env
+deploy/env.conf
 
 # 日志
 *.log
@@ -25,3 +26,6 @@ logs/
 
 # git worktree 并行工作区
 worktrees/
+
+# 本地敏感运维手册(含凭据,勿入库)
+docs/ops-runbook.md

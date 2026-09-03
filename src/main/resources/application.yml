@@ -47,18 +47,34 @@ feige:
     enabled: ${FG_LOCK_ENABLED:false}
     # 锁自动过期秒数：须大于扫描最长耗时、小于调度周期(60s)
     ttl-seconds: ${FG_LOCK_TTL_SECONDS:30}
+  letter:
+    # 召回宽限期(分钟)：规格5.3=30；测试环境设 5 便于验证召回（FG_RECALL_GRACE_MINUTES 覆盖）
+    recall-grace-minutes: ${FG_RECALL_GRACE_MINUTES:30}
   pigeon:
     # 多鸽付费能力开关（规格15.6 PAID_PIGEON_ENABLED）：false=第2~6只免费创建（无支付资格期兼容）；true=必须购买
     paid-enabled: ${PAID_PIGEON_ENABLED:false}
-    # 鸽舍位置价格（分）：下标0=位置1(小白免费占位)，位置2~6价格递增（A1 待定，配置化可调）
-    prices: ${FG_PIGEON_PRICES:0,100,300,600,1000,1500}
+    # 价格与道具 productId 自 V5.1 起以 feige_pay_goods 表为准（不再用 FG_PIGEON_PRICES/FG_PAY_GOODS_IDS）
   pay:
-    # 微信支付凭证（虚拟支付资格申请中，A2：可留空；留空时 mock-pay=true 允许本地/测试环境模拟支付成功）
-    mch-id: ${FG_PAY_MCH_ID:}
-    api-key: ${FG_PAY_API_KEY:}
-    appid: ${FG_WECHAT_APPID:}
-    # mock 支付模式：凭证未配且为 true 时，confirm 接口直接置 PAID（仅限测试环境，生产必须 false）
+    # 真实虚拟支付（米大师 xpay，V1.2）——虚拟支付基本配置
+    # OfferID：虚拟支付支付账号（替代原微信支付商户号体系）
+    offer-id: ${FG_PAY_OFFER_ID:}
+    # 现网 AppKey：支付签名 paySig = hmac_sha256(appKey, uri & postBody)（勿用沙箱 AppKey）
+    app-key: ${FG_PAY_APP_KEY:}
+    # 道具商品（productId+价格分）配置在 feige_pay_goods 表（V5.1 起，取代环境变量 FG_PAY_GOODS_IDS）
+    # mock 支付模式：offer-id/app-key 未配或为 true 时，confirm 接口直接置 PAID（仅限测试环境，生产必须 false）
     mock-pay: ${FG_PAY_MOCK:true}
+    # 查单兜底开关（生产 true；关闭则只靠发货推送）
+    query-poll-enabled: ${FG_PAY_QUERY_POLL_ENABLED:false}
+    # 订单超时分钟数（V12-5：CREATED 未支付超时自动取消，释放槽位/角色占位；默认 15 分钟）
+    order-expire-minutes: ${FG_ORDER_EXPIRE_MINUTES:15}
+  mp-push:
+    # 虚拟支付「发货推送配置」消息推送（接收 xpay_goods_deliver_notify）
+    # token：GET 验 URL（checkSignature）用
+    token: ${FG_MP_PUSH_TOKEN:}
+    # EncodingAESKey：43 位 A-Za-z0-9（兼容模式解密用）
+    aes-key: ${FG_MP_PUSH_AES_KEY:}
+    # 消息加解密方式：0 明文 / 1 兼容 / 2 安全（当前后台配兼容模式=1，收到密文走 decrypt；响应按文档可明文/加密）
+    encrypt-mode: ${FG_MP_PUSH_ENCRYPT_MODE:1}
   qiniu:
     # 七牛云上传凭证（空间 mgif 不变，目录 feige/；凭证由环境变量注入）
     access-key: ${FG_QINIU_ACCESS_KEY:}
