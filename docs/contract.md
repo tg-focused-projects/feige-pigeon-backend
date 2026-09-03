@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V6.0 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V6.1 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V6.0**（2026-09-03，飞行日志按飞行时长设定中途事件条数：<10min 0条 … ≥24h 5条；含 V5.2 及以下全部）
+> 版本：**V6.1**（2026-09-03，share-preview 返参新增 pigeonRoleKey；含 V6.0 及以下全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://demo.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式；⚠️ `test.soogif.com` 指向生产 TKE 集群，切勿用于测试）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -86,8 +86,8 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 ### `GET /feige/letter/share-preview` — 分享预览（不产生状态变更；返回发件落款与起飞时间，不返回正文/标题/精确坐标）
 入参：`shareToken* openid?`
-出参：`{ claimStatus:"AVAILABLE|CLAIMED_BY_ME|CLAIMED_BY_OTHER|RECALLED|EXPIRED", letterId, senderProvince, senderCity, **senderSignature**, **departureTime**, pigeonName, serverTime }`
-（`senderSignature` 发件落款，可为空；`departureTime` 信件发出时间 `yyyy-MM-dd HH:mm:ss`。规格6.1：认领前可展示落款与起飞时间。）
+出参：`{ claimStatus:"AVAILABLE|CLAIMED_BY_ME|CLAIMED_BY_OTHER|RECALLED|EXPIRED", letterId, senderProvince, senderCity, **senderSignature**, **departureTime**, pigeonName, **pigeonRoleKey**(V6.1 新增), serverTime }`
+（`senderSignature` 发件落款，可为空；`departureTime` 信件发出时间 `yyyy-MM-dd HH:mm:ss`；`pigeonRoleKey` 送信鸽子角色（XIAOBAI/PANGDUN/…），鸽子缺失或旧信无绑定为 null。规格6.1：认领前可展示落款与起飞时间。）
 错误：`LETTER_NOT_FOUND`
 
 ### `POST /feige/letter/bind` — 原子认领（JSON body）
@@ -260,6 +260,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V6.1 | 2026-09-03 | **share-preview 返参新增 pigeonRoleKey**：分享预览返回送信鸽子角色（按 pigeon_id 关联 feige_pigeon 查 role_key；鸽子缺失/旧信无绑定为 null） |
 | V6.0 | 2026-09-03 | **飞行日志按飞行时长设定中途事件条数**：generateEvents 中途随机事件数改为按时长分档（<10min:0 / 10min–2h:1 / 2–8h:2 / 8–16h:3 / 16–24h:4 / ≥24h:5），中途事件沿时间轴均匀分布（替代原固定 4 条）；起飞+抵达固定记录；文案池保留 7 种；确定性生成+幂等不变 |
 | V5.2 | 2026-09-03 | **订单占位释放**（V12-5）：POST /pigeon/order 同角色/同位置存活 CREATED 旧单自动取消后建新单（方案A覆盖，PAID/REFUNDED 不覆盖）；新增 FeigeOrderExpireJob 每分钟扫 CREATED 且超时（`FG_ORDER_EXPIRE_MINUTES` 默认 15）自动置 CANCELLED 释放占位；事务原子（下单+覆盖）；无前端主动取消接口 |
 | V5.1 | 2026-09-02 | **虚拟支付道具商品表 feige_pay_goods**（slot_index/product_id/price_fen/remark）：槽位价格与微信道具 productId 以表为准（slots.amountFen、下单 amountFen、signData.productId/goodsPrice 全表驱动）；slots 出参加 goodsConfigured（表未配置该槽位则禁用购买）；表未配置槽位下单拒绝（ORDER_CREATE_FAILED）；废弃 FG_PIGEON_PRICES/FG_PAY_GOODS_IDS 环境变量 |

@@ -162,8 +162,18 @@ public class FeigeLetterService {
         data.put("senderSignature", letter.getSignature());
         data.put("departureTime", formatDate(letter.getDepartureTime()));
         data.put("pigeonName", letter.getPigeonName());
+        data.put("pigeonRoleKey", pigeonRoleKeyOf(letter.getPigeonId()));
         data.put("serverTime", formatDate(new Date()));
         return ok(data);
+    }
+
+    /** 按鸽子查 roleKey（分享预览展示鸽子角色；鸽子缺失/旧信无绑定返回 null，前端自行兜底）。 */
+    private String pigeonRoleKeyOf(Long pigeonId) {
+        if (pigeonId == null) {
+            return null;
+        }
+        FeigePigeon pigeon = feigePigeonMapper.selectByPrimaryKey(pigeonId);
+        return pigeon == null ? null : pigeon.getRoleKey();
     }
 
     // ============================ 收件人原子认领（bind） ============================
