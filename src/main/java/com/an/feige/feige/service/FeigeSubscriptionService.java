@@ -96,7 +96,7 @@ public class FeigeSubscriptionService {
      */
     public void pushArrival(FeigeLetter letter) {
         push(letter, FeigeSubscription.TYPE_ARRIVAL, arrivalTemplateId,
-                "pages/feige/letter?id=" + letter.getLetterId(), (sub) -> {
+                "pages/flight/flight?letterId=" + letter.getLetterId() + "&from=receive", (sub) -> {
                     boolean isSender = letter.getSenderOpenid() != null
                             && letter.getSenderOpenid().equals(sub.getOpenid());
                     Map<String, Object> data = new HashMap<>();
@@ -129,7 +129,7 @@ public class FeigeSubscriptionService {
         }
         // 模板字段：thing1 昵称 / time2 时间 / thing3 通知事项 / thing4 温馨提醒
         push(origin, FeigeSubscription.TYPE_REPLY_ARRIVAL, replyArrivalTemplateId,
-                "pages/feige/letter?id=" + letter.getLetterId(), (sub) -> {
+                "pages/flight/flight?letterId=" + letter.getLetterId() + "&from=receive&reply=1", (sub) -> {
                     Map<String, Object> data = new HashMap<>();
                     data.put("thing1", valueOf(currentPigeonName(letter)));
                     data.put("time2", valueOf(formatDate(letter.getArrivalTime())));
