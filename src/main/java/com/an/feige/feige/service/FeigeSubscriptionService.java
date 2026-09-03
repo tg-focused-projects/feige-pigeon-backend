@@ -2,8 +2,10 @@ package com.an.feige.feige.service;
 
 import com.an.feige.common.WeChatClient;
 import com.an.feige.feige.entity.FeigeLetter;
+import com.an.feige.feige.entity.FeigePigeon;
 import com.an.feige.feige.entity.FeigeSubscription;
 import com.an.feige.feige.mapper.FeigeLetterMapper;
+import com.an.feige.feige.mapper.FeigePigeonMapper;
 import com.an.feige.feige.mapper.FeigeSubscriptionMapper;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -40,6 +42,9 @@ public class FeigeSubscriptionService {
 
     @Resource
     private FeigeLetterMapper feigeLetterMapper;
+
+    @Resource
+    private FeigePigeonMapper feigePigeonMapper;
 
     @Resource
     private WeChatClient weChatClient;
@@ -91,11 +96,11 @@ public class FeigeSubscriptionService {
      */
     public void pushArrival(FeigeLetter letter) {
         push(letter, FeigeSubscription.TYPE_ARRIVAL, arrivalTemplateId,
-                "pages/feige/letter?id=" + letter.getLetterId(), (sub) -> {
+                "pages/flight/flight?letterId=" + letter.getLetterId() + "&from=receive", (sub) -> {
                     boolean isSender = letter.getSenderOpenid() != null
                             && letter.getSenderOpenid().equals(sub.getOpenid());
                     Map<String, Object> data = new HashMap<>();
-                    String pigeonName = StringUtils.defaultString(letter.getPigeonName(), "信鸽");
+                    String pigeonName = currentPigeonName(letter);
                     data.put("thing1", valueOf(pigeonName));
                     data.put("time2", valueOf(formatDate(letter.getArrivalTime())));
                     if (isSender) {
@@ -124,9 +129,9 @@ public class FeigeSubscriptionService {
         }
         // 模板字段：thing1 昵称 / time2 时间 / thing3 通知事项 / thing4 温馨提醒
         push(origin, FeigeSubscription.TYPE_REPLY_ARRIVAL, replyArrivalTemplateId,
-                "pages/feige/letter?id=" + letter.getLetterId(), (sub) -> {
+                "pages/flight/flight?letterId=" + letter.getLetterId() + "&from=receive&reply=1", (sub) -> {
                     Map<String, Object> data = new HashMap<>();
-                    data.put("thing1", valueOf(StringUtils.defaultString(letter.getPigeonName(), "信鸽")));
+                    data.put("thing1", valueOf(currentPigeonName(letter)));
                     data.put("time2", valueOf(formatDate(letter.getArrivalTime())));
                     data.put("thing3", valueOf("有人给你回了一封信"));
                     data.put("thing4", valueOf("你的信鸽带着回信抵达了，来看看吧"));
@@ -158,6 +163,23 @@ public class FeigeSubscriptionService {
     /** 按订阅者生成推送模板数据（字段：thing1/time2/thing3/thing4）。 */
     private interface MessageBuilder {
         Map<String, Object> build(FeigeSubscription sub);
+    }
+
+    /**
+     * 订阅消息展示的鸽子昵称：优先取 feige_pigeon.name（实时，鸽子改名后同步）；
+     * 查不到（历史信/鸽子被删）回退 feige_letter.pigeon_name 快照，再兜底「信鸽」。
+     */
+    private String currentPigeonName(FeigeLetter letter) {
+        if (letter == null) {
+            return "信鸽";
+        }
+        if (letter.getPigeonId() != null) {
+            FeigePigeon pigeon = feigePigeonMapper.selectByPrimaryKey(letter.getPigeonId());
+            if (pigeon != null && StringUtils.isNotBlank(pigeon.getName())) {
+                return pigeon.getName();
+            }
+        }
+        return StringUtils.defaultString(letter.getPigeonName(), "信鸽");
     }
 
     private String formatDate(Date date) {

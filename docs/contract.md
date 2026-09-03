@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V6.3 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V6.5 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V6.3**（2026-09-03，letter/flight 顶层返参新增 pigeonRoleKey；含 V6.2 及以下全部）
+> 版本：**V6.5**（2026-09-03，订阅消息跳转页改为 pages/flight/flight：信抵达 from=receive、回信抵达 +reply=1；含 V6.4 及以下全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://demo.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式；⚠️ `test.soogif.com` 指向生产 TKE 集群，切勿用于测试）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -262,6 +262,8 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V6.5 | 2026-09-03 | **订阅消息跳转页改为 pages/flight/flight**：信抵达通知跳 `pages/flight/flight?letterId=<信ID>&from=receive`；回信抵达通知跳 `pages/flight/flight?letterId=<回信ID>&from=receive&reply=1`（原 pages/feige/letter 无参） |
+| V6.4 | 2026-09-03 | **订阅消息昵称改用 feige_pigeon.name**：到达/回信到达推送文案（thing1/thing3/thing4 中的鸽子名）由 feige_letter.pigeon_name 快照改为按 pigeon_id 实时查 feige_pigeon.name（鸽子改名后推送同步新名；查不到回退快照→「信鸽」） |
 | V6.3 | 2026-09-03 | **letter/flight 顶层返参新增 pigeonRoleKey**：飞行页返回送信鸽子角色（按 pigeon_id 关联 feige_pigeon 查 role_key；历史信/无鸽子绑定为 null；FLYING_UNCLAIMED/已归巢/飞行中各状态分支均返回） |
 | V6.2 | 2026-09-03 | **letter/list 列表项新增送信鸽子信息**：每项返回 pigeonId（信件冗余字段）、pigeonName（冗余字段）、pigeonRoleKey（按 pigeon_id 关联 feige_pigeon 查 role_key；无绑定为 null）；inbox 与 sent 均生效 |
 | V6.1 | 2026-09-03 | **share-preview 返参新增 pigeonRoleKey**：分享预览返回送信鸽子角色（按 pigeon_id 关联 feige_pigeon 查 role_key；鸽子缺失/旧信无绑定为 null） |
