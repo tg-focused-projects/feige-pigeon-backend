@@ -590,6 +590,10 @@ public class FeigeLetterService {
             item.put("threadId", letter.getThreadId());
             item.put("replyToLetterId", letter.getReplyToLetterId());
             item.put("canRecall", isRecallable(letter));
+            // 送信鸽子信息（V6.2 新增：pigeonId/pigeonName/pigeonRoleKey；历史信无鸽子绑定时为 null）
+            item.put("pigeonId", letter.getPigeonId());
+            item.put("pigeonName", letter.getPigeonName());
+            item.put("pigeonRoleKey", pigeonRoleKeyOf(letter.getPigeonId()));
             items.add(item);
         }
         Map<String, Object> data = new HashMap<>();

@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V6.1 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V6.2 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V6.1**（2026-09-03，share-preview 返参新增 pigeonRoleKey；含 V6.0 及以下全部）
+> 版本：**V6.2**（2026-09-03，letter/list 列表项新增 pigeonId/pigeonName/pigeonRoleKey；含 V6.1 及以下全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://demo.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式；⚠️ `test.soogif.com` 指向生产 TKE 集群，切勿用于测试）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -133,11 +133,12 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 - 同信+同人+同类型重复订阅幂等（刷新订阅时间）。
 错误：`LETTER_NOT_FOUND` `ACCESS_DENIED` `INVALID_ARGUMENT` `INVALID_SIGNATURE`
 
-### `GET /feige/letter/list` — 信箱列表（**V2 新增**）
+### `GET /feige/letter/list` — 信箱列表（**V2 新增**；V6.2 列表项加送信鸽子信息）
 入参：`openid* type?(inbox|sent, 默认inbox) page?(默认0) size?(默认20, ≤50)`
 - inbox（来信）：`recipient_openid=openid`，排序 `ARRIVED > IN_FLIGHT > DELIVERED > RECALLED > 其他`
 - sent（寄出）：`sender_openid=openid`，按时间倒序
-出参：`{ total, page, size, list:[{ letterId, shareToken, status, title, senderCity, recipientCity, departureTime, arrivalTime, createAt, threadId, replyToLetterId, canRecall }] }`
+出参：`{ total, page, size, list:[{ letterId, shareToken, status, title, senderCity, recipientCity, departureTime, arrivalTime, createAt, threadId, replyToLetterId, canRecall, pigeonId, pigeonName, pigeonRoleKey(V6.2 新增) }] }`
+（`pigeonId/pigeonName` 来自信件冗余字段；`pigeonRoleKey` 按 pigeon_id 关联 feige_pigeon 查 role_key；历史信/无鸽子绑定为 null。）
 错误：`INVALID_ARGUMENT`
 
 ### `POST /feige/report` — 内容投诉（**V3 新增**，JSON body）
@@ -260,6 +261,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V6.2 | 2026-09-03 | **letter/list 列表项新增送信鸽子信息**：每项返回 pigeonId（信件冗余字段）、pigeonName（冗余字段）、pigeonRoleKey（按 pigeon_id 关联 feige_pigeon 查 role_key；无绑定为 null）；inbox 与 sent 均生效 |
 | V6.1 | 2026-09-03 | **share-preview 返参新增 pigeonRoleKey**：分享预览返回送信鸽子角色（按 pigeon_id 关联 feige_pigeon 查 role_key；鸽子缺失/旧信无绑定为 null） |
 | V6.0 | 2026-09-03 | **飞行日志按飞行时长设定中途事件条数**：generateEvents 中途随机事件数改为按时长分档（<10min:0 / 10min–2h:1 / 2–8h:2 / 8–16h:3 / 16–24h:4 / ≥24h:5），中途事件沿时间轴均匀分布（替代原固定 4 条）；起飞+抵达固定记录；文案池保留 7 种；确定性生成+幂等不变 |
 | V5.2 | 2026-09-03 | **订单占位释放**（V12-5）：POST /pigeon/order 同角色/同位置存活 CREATED 旧单自动取消后建新单（方案A覆盖，PAID/REFUNDED 不覆盖）；新增 FeigeOrderExpireJob 每分钟扫 CREATED 且超时（`FG_ORDER_EXPIRE_MINUTES` 默认 15）自动置 CANCELLED 释放占位；事务原子（下单+覆盖）；无前端主动取消接口 |
