@@ -156,6 +156,7 @@ public class FeigePayService {
      *
      * @return null 表示参数/状态非法；否则 { orderNo, roleKey, slotIndex, amountFen, status, [payData] }
      */
+    @Transactional
     public Map<String, Object> createOrder(String openid, Integer slotIndex, String roleKey) {
         if (!paidEnabled) {
             log.info("付费开关关闭，跳过下单 openid={} slot={}", openid, slotIndex);
@@ -175,17 +176,10 @@ public class FeigePayService {
         if (feigePigeonService.getByOpenidAndSlot(openid, slotIndex) != null) {
             return null;
         }
-        // 防重复下单：该角色或该位置存在未完成订单（CREATED/PAID 均拦截，避免占位重复）
-        FeigeOrder existRole = feigeOrderMapper.selectLatestByOpenidAndRole(openid, roleKey);
-        if (existRole != null && !FeigeOrder.STATUS_CANCELLED.equals(existRole.getStatus())
-                && !FeigeOrder.STATUS_REFUNDED.equals(existRole.getStatus())) {
-            return null;
-        }
-        FeigeOrder existSlot = feigeOrderMapper.selectLatestByOpenidAndSlot(openid, slotIndex);
-        if (existSlot != null && !FeigeOrder.STATUS_CANCELLED.equals(existSlot.getStatus())
-                && !FeigeOrder.STATUS_REFUNDED.equals(existSlot.getStatus())) {
-            return null;
-        }
+        // V12-5 占位释放（方案A）：同角色或同位置存在存活 CREATED 旧单 → 自动取消后建新单。
+        // 保证"用户重新下单"（换角色/换槽/重下）永不被旧 CREATED 单拦截；
+        // PAID（已支付发鸽）与 REFUNDED 不覆盖：角色/位置已占/已拥有仍由上方鸽子校验拦截。
+        cancelStaleCreated(openid, roleKey, slotIndex);
         // V5.1：价格/道具以 feige_pay_goods 表为准——表未配置该槽位商品则拒绝下单（防无价单/错误 productId）
         FeigePayGoods goods = feigePayGoodsMapper.selectBySlotIndex(slotIndex);
         if (goods == null) {
@@ -219,6 +213,46 @@ public class FeigePayService {
             data.put("payData", payData);
         }
         return data;
+    }
+
+    /**
+     * 覆盖式取消：下单前取消同角色或同位置的存活 CREATED 旧单（幂等：仅 CREATED 生效）。
+     * 事务内调用（createOrder 由 Controller 层包事务，或调用方保证）。
+     */
+    private void cancelStaleCreated(String openid, String roleKey, Integer slotIndex) {
+        Date now = new Date();
+        FeigeOrder existRole = feigeOrderMapper.selectLatestByOpenidAndRole(openid, roleKey);
+        if (existRole != null && FeigeOrder.STATUS_CREATED.equals(existRole.getStatus())) {
+            feigeOrderMapper.markCancelled(existRole.getOrderNo(), now);
+            log.info("[order-cancel] 下单覆盖旧单(同角色) orderNo={} roleKey={}", existRole.getOrderNo(), roleKey);
+        }
+        FeigeOrder existSlot = feigeOrderMapper.selectLatestByOpenidAndSlot(openid, slotIndex);
+        if (existSlot != null && FeigeOrder.STATUS_CREATED.equals(existSlot.getStatus())) {
+            feigeOrderMapper.markCancelled(existSlot.getOrderNo(), now);
+            log.info("[order-cancel] 下单覆盖旧单(同位置) orderNo={} slot={}", existSlot.getOrderNo(), slotIndex);
+        }
+    }
+
+    /**
+     * 订单超时自动取消（V12-5）：扫描 CREATED 且 create_at 早于 now-expireMinutes 的订单置 CANCELLED，
+     * 释放槽位/角色占位。由 FeigeOrderExpireJob 每分钟调用（Redis 锁互斥）。
+     *
+     * @return 本次取消的单号集合（日志/测试用）
+     */
+    public List<String> expireStaleOrders(int expireMinutes) {
+        List<String> cancelled = new ArrayList<>();
+        if (expireMinutes <= 0) {
+            return cancelled;
+        }
+        Date now = new Date();
+        Date deadline = new Date(now.getTime() - expireMinutes * 60_000L);
+        for (FeigeOrder order : feigeOrderMapper.selectCreatedBefore(deadline)) {
+            feigeOrderMapper.markCancelled(order.getOrderNo(), now);
+            cancelled.add(order.getOrderNo());
+            log.info("[order-expire] 订单超时自动取消 orderNo={} roleKey={} slot={} createAt={}",
+                    order.getOrderNo(), order.getRoleKey(), order.getSlotIndex(), order.getCreateAt());
+        }
+        return cancelled;
     }
 
     /**
