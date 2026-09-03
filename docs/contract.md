@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V5.1 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V5.2 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V5.1**（2026-09-02，虚拟支付道具商品表 feige_pay_goods：槽位价格与 productId 由表驱动；含 V5.0 及以下全部）
+> 版本：**V5.2**（2026-09-03，订单占位释放：下单自动覆盖旧 CREATED 单 + 超时自动取消；含 V5.1 及以下全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://demo.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式；⚠️ `test.soogif.com` 指向生产 TKE 集群，切勿用于测试）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -177,7 +177,8 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 ### `POST /feige/pigeon/order` — 创建购买订单（**V4.2：买位置+选角色；V5.0：真实虚拟支付返回 payData；V5.1：商品以表配置**，form，需 sign）
 入参：`openid* slotIndex* roleKey* session_key?`（规格15.5：点击空位置 → 选择候选角色 → 按位置价下单；`session_key` 用于算用户态签名 signature，前端 wx.login 当次有效）
-条件：`PAID_PIGEON_ENABLED=true`；`slotIndex` 2~6 且该位置空闲；角色合法且未拥有；该角色/位置无未完成订单（CREATED/PAID）；**`feige_pay_goods` 表已配置该槽位商品**（V5.1：价格/productId 以表为准，未配置返回 `ORDER_CREATE_FAILED`）。
+条件：`PAID_PIGEON_ENABLED=true`；`slotIndex` 2~6 且该位置无鸽子；角色合法且未拥有（鸽子校验）；**`feige_pay_goods` 表已配置该槽位商品**（价格/productId 以表为准，未配置返回 `ORDER_CREATE_FAILED`）。
+**V5.2 占位释放**：同角色或同位置的**存活 CREATED 旧单**在下单时被自动置 CANCELLED 再建新单（覆盖式：换角色/换槽/重下永不被旧单拦截；PAID/REFUNDED 不覆盖——已支付/已拥有的角色或已占位置仍由鸽子校验拒绝）。
 出参：`{ orderNo, roleKey, slotIndex, amountFen(=表 price_fen), status:"CREATED", mockPay, payData? }`
 - **mock 模式**（offer-id/app-key 未配）：无 `payData`，前端调 `POST /pigeon/confirm` 模拟确认；
 - **真实虚拟支付模式**（V5.0，offer-id/app-key 已配）：`payData` = `{ signData(JSON串), paySig, signature, mode:"short_series_goods", outTradeNo }`，前端原样传给 `wx.requestVirtualPayment` 拉起微信支付；`paySig = hmac_sha256(appKey, "requestVirtualPayment&"+signData)`、`signature = hmac_sha256(sessionKey, signData)`；`signData.productId` 来自表 `feige_pay_goods`、`goodsPrice=price_fen`。
@@ -258,6 +259,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V5.2 | 2026-09-03 | **订单占位释放**（V12-5）：POST /pigeon/order 同角色/同位置存活 CREATED 旧单自动取消后建新单（方案A覆盖，PAID/REFUNDED 不覆盖）；新增 FeigeOrderExpireJob 每分钟扫 CREATED 且超时（`FG_ORDER_EXPIRE_MINUTES` 默认 15）自动置 CANCELLED 释放占位；事务原子（下单+覆盖）；无前端主动取消接口 |
 | V5.1 | 2026-09-02 | **虚拟支付道具商品表 feige_pay_goods**（slot_index/product_id/price_fen/remark）：槽位价格与微信道具 productId 以表为准（slots.amountFen、下单 amountFen、signData.productId/goodsPrice 全表驱动）；slots 出参加 goodsConfigured（表未配置该槽位则禁用购买）；表未配置槽位下单拒绝（ORDER_CREATE_FAILED）；废弃 FG_PIGEON_PRICES/FG_PAY_GOODS_IDS 环境变量 |
 | V5.0 | 2026-09-02 | **真实虚拟支付（米大师 xpay）接入**（资格已通过）：POST /pigeon/order 入参加 session_key、xpay 已配置时出参加 payData（signData/paySig/signature/mode 供 wx.requestVirtualPayment）；POST /feige/pay/notify 发货推送接收（GET 验 URL + 兼容模式 AES 解密；xpay_goods_deliver_notify 幂等确认发货 / xpay_refund_notify 退款置 REFUNDED）；GET /feige/order/status 订单状态轮询；confirm 与 pay/callback 在真实支付模式下拒绝（REAL_PAY_ENABLED）；FeigeXPayQueryJob 查单兜底 + notify_provide_goods 上报；orderNo 改 8~32 位；配置 FG_PAY_OFFER_ID/FG_PAY_APP_KEY/FG_PAY_GOODS_IDS/FG_PAY_QUERY_POLL_ENABLED/FG_MP_PUSH_*（废弃 FG_PAY_MCH_ID/FG_PAY_API_KEY） |
 | V4.3 | 2026-09-02 | 召回宽限期可配置：`FG_RECALL_GRACE_MINUTES`（默认 30 分钟=规格5.3，测试可设 5 便于验证） |

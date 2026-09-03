@@ -73,7 +73,7 @@
 | V12-3 | **七牛上传凭证** | 需求 | `POST /feige/upload/token`：空间 mgif、目录 feige/（参考 MaterialController#uploadToken；qiniu-java-sdk 7.13.0；fsize 1KB~100MB；mp4/mov 转码） | ✅ 开发完成，本地自测通过（token 策略验证：scope=mgif:feige/..、fsize 限制、mp4 转码） |
 | V12-4 | **真实虚拟支付（米大师 xpay）** | 官方文档+search111 参考实现 | 下单返回 payData（offerId/productId/signData/paySig/signature）→ 前端 wx.requestVirtualPayment → xpay_goods_deliver_notify 发货推送(主)+query_order 查单+notify_provide_goods 上报(兜底)；**道具 productId/价格配置于 feige_pay_goods 表（V5.1）** | ✅ **开发完成，本地自测通过（V5.0+V5.1）**：payData 下单/发货推送(GET验URL+AES解密+幂等发货)/退款推送/order/status/查单兜底 Job/真实模式拦截 confirm 防绕过/道具表驱动价格与productId——详见下方清单；契约更新至 V5.1 |
 
-| V12-5 | **订单占位释放（取消兜底）** | 需求（2026-09-03 用户确认） | CREATED 订单防重占位导致无法换槽/换角色再下单；**方案A：下单自动覆盖**——createOrder 前若同槽位或同角色存在存活 CREATED 旧单，自动置 CANCELLED 再建新单（任何"重新下单"路径都不被旧单拦截；PAID/REFUNDED 不受影响）；**超时 Job：FeigeOrderExpireJob** 每分钟扫 CREATED 且 create_at 超时（`FG_ORDER_EXPIRE_MINUTES` 默认 15）自动置 CANCELLED（清理彻底放弃的残留单）；**不做前端主动取消接口**（已确认） | ⏳ 待开发 |
+| V12-5 | **订单占位释放（取消兜底）** | 需求（2026-09-03 用户确认） | CREATED 订单防重占位导致无法换槽/换角色再下单；**方案A：下单自动覆盖**——createOrder 前若同槽位或同角色存在存活 CREATED 旧单，自动置 CANCELLED 再建新单（任何"重新下单"路径都不被旧单拦截；PAID/REFUNDED 不受影响）；**超时 Job：FeigeOrderExpireJob** 每分钟扫 CREATED 且 create_at 超时（`FG_ORDER_EXPIRE_MINUTES` 默认 15）自动置 CANCELLED（清理彻底放弃的残留单）；**不做前端主动取消接口**（已确认） | ✅ 开发完成并合并 develop（a5c7af6）：本地自测通过（覆盖换角色/换槽/重下、PAID 保护 409、1min 超时自动取消+释放可重下）；契约更新至 V5.2；待测试机回归 |
 
 **V1.2 执行顺序**（依赖关系）：
 1. **V12-2 开关与槽位**（PAID_PIGEON_ENABLED + slots 空位/候选/价格，先有模型）
