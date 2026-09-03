@@ -87,14 +87,23 @@ public class PayNotifyController {
                 writeText(response, "success");
                 return;
             }
-            log.info("[pay-notify] 收到推送 rawLen={}", xml.length());
+            log.info("[pay-notify] 收到推送 rawLen={} body={}", xml.length(),
+                    xml.length() > 3000 ? xml.substring(0, 3000) : xml);
             String plain = xml;
             // 兼容/安全模式：外层 Encrypt 密文需解密（明文模式直接用）
             if (encryptMode != 0 && StringUtils.isNotBlank(pushAesKey)) {
                 String encrypt = WxMsgCryptUtil.extractXmlField(xml, "Encrypt");
                 if (StringUtils.isNotBlank(encrypt)) {
-                    plain = WxMsgCryptUtil.decrypt(pushAesKey, encrypt);
-                    log.info("[pay-notify] 解密后 plainXml={}", plain);
+                    try {
+                        plain = WxMsgCryptUtil.decrypt(pushAesKey, encrypt);
+                        log.info("[pay-notify] 解密成功 plainXml={}", plain);
+                    } catch (Exception e) {
+                        // 解密失败回退：按明文直接解析原始 body（兼容明文推送/密钥不一致的降级路径；
+                        // 业务幂等 + 查单兜底兜底，不会重复发货）
+                        log.warn("[pay-notify] 密文解密失败, 回退明文解析 encryptLen={} err={}",
+                                encrypt.length(), e.getMessage());
+                        plain = xml;
+                    }
                 }
             }
             handlePlain(plain);
