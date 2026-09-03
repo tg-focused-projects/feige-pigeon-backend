@@ -335,6 +335,9 @@ public class FeigeLetterService {
         boolean canRecall = isRecallable(letter);
         data.put("canRecall", canRecall);
 
+        // 送信鸽子角色（V6.3 新增：飞行页展示鸽子角色；历史信无鸽子绑定时为 null）
+        data.put("pigeonRoleKey", pigeonRoleKeyOf(letter.getPigeonId()));
+
         if (FeigeLetter.STATUS_FLYING_UNCLAIMED.equals(letter.getStatus())) {
             data.put("claimExpireTime", formatDate(letter.getClaimExpireTime()));
             data.put("progress", null);
