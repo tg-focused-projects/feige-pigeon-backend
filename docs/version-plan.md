@@ -218,7 +218,8 @@
 | 2026-09-02 | **V1.2 真实虚拟支付接入完成（本地自测通过，契约 V5.0，feature/v1.2-virtual-pay）**：offer-id/app-key/goods-ids/mp-push 配置；WeChatClient access_token 缓存 + WxXPayClient(query_order/notify_provide_goods/paySig)；WxMsgCryptUtil（checkSignature + AES 兼容模式解密）；下单返回 payData（signData/paySig/signature，outTradeNo 8~32 位）；POST /feige/pay/notify（GET 验 URL + xpay_goods_deliver_notify 幂等发货 + xpay_refund_notify 退款）；GET /feige/order/status；FeigeXPayQueryJob 查单兜底；真实模式 confirm//pay/callback 拒绝（REAL_PAY_ENABLED）；本地全链路自测：payData 签名校验通过、加密推送→解密→确认→发鸽→退款推送→REFUNDED、幂等重复不重复发货；契约 V5.0；待测试机回归 |
 | 2026-09-02 | **V1.2 道具商品表化（契约 V5.1，feature/v1.2-goods-table）**：新增 feige_pay_goods 表（slot_index/product_id/price_fen/remark，slot_index 唯一）——槽位价格与微信道具 productId 以表为准（slots.amountFen/下单定价/signData.productId/goodsPrice 全表驱动）；slots 出参加 goodsConfigured（表未配置该槽位前端禁用购买）；表未配置槽位下单拒绝；废弃 FG_PIGEON_PRICES/FG_PAY_GOODS_IDS；本地自测通过（价格/productId 表驱动、删表拒单、恢复可购）；待测试机回归 |
 | 2026-09-03 | **飞行日志按飞行时长设定事件条数（契约 V6.0，feature/event-count-by-duration）**：generateEvents 中途随机事件由固定 4 条改为按时长分档（<10min:0 / 10min–2h:1 / 2–8h:2 / 8–16h:3 / 16–24h:4 / ≥24h:5），中途事件沿时间轴均匀分布；起飞+抵达固定；文案池保留 7 种；确定性生成+幂等不变；本地自测通过（同城5min→2条、6.85h→4条、22.5h→6条、重复bind幂等）；待测试机回归 |
-| 2026-09-03 | **share-preview 新增返参 pigeonRoleKey（契约 V6.1，feature/share-preview-pigeon-rolekey）**：分享预览返回送信鸽子角色（pigeon_id 关联 feige_pigeon 查 role_key；鸽子缺失/旧信无绑定为 null）；本地自测通过（发信→share-preview 返回 XIAOBAI）；待测试机回归 |
+| 2026-09-03 | **share-preview 新增返参 pigeonRoleKey（契约 V6.1，feature/share-preview-pigeon-rolekey）**：分享预览返回送信鸽子角色（pigeon_id 关联 feige_pigeon 查 role_key；鸽子缺失/旧信无绑定为 null）；本地自测通过（发信→share-preview 返回 XIAOBAI）；✅ 测试机回归通过（develop 5d9b877，HUIHUI/ASHAN 角色验证） |
+| 2026-09-03 | **letter/list 列表项新增鸽子信息（契约 V6.2，feature/letter-list-pigeon-info）**：inbox/sent 列表每项返回 pigeonId/pigeonName（信件冗余字段）+ pigeonRoleKey（pigeon_id 关联 feige_pigeon）；历史信/无绑定为 null；本地自测通过（inbox+sent 返回小白/PANGDUN 角色映射正确）；待测试机回归 |
 
 ---
 
