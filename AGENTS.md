@@ -11,6 +11,9 @@
 5. **main 归人工所有**：main 分支的任何操作（commit / merge / push）都由人工执行，AI 不触碰 main
 6. **生产发布**：main 打 tag → Docker 镜像（发布机 `build_feigepigeon_images.sh`）→ 腾讯云
 
+> **本地自测标准流程见 `docs/local-dev-test.md`**（JDK8/mvn/mysql 本机路径、schema 幂等坑、
+> dev 登录+sign、支付 mock/发货推送模拟等可复制命令）。修改涉及支付/订单/鸽子/DB 时必须按该手册自测。
+
 ## 运维操作（⚠️ 人工触发，勿自动执行）
 
 连接发布机、测试机、部署测试机、全链路回归、各类版本回归要点、常见坑，
