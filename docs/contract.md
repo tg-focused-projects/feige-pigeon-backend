@@ -229,7 +229,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 - 参数/格式/大小不合法：`code:400`，`errorKey` = `INVALID_ARGUMENT`（缺文件/格式不支持）或 `FILE_TOO_LARGE`（>1M）
 - 签名非法：`code:401` `INVALID_SIGNATURE`
 - 审核服务异常（微信不可达/token 异常/未知错误码）：`code:500` `CHECK_FAILED`
-说明：转发微信 `img_sec_check`（服务端接口，需 access_token，前端无法直连）；后端不落盘、仅内存转发，图片由前端直接上传到本接口（**不经过七牛**）。限制：格式 PNG/JPEG/JPG/GIF、大小 ≤1M、尺寸 ≤750px×1334px（尺寸需前端先压缩，后端不校验）；微信侧频率 2000 次/分钟、200000 次/天。access_token 失效(40001)自动重取并重试一次。**前端建议**：`code!=200` 或 `data.risky==true` 时禁止使用该图片；`CHECK_FAILED` 按业务策略拦截或提示重试。
+说明：转发微信 `img_sec_check`（服务端接口，需 access_token，前端无法直连）；后端不落盘、仅内存转发，图片由前端直接上传到本接口（**不经过七牛**）。限制：格式 PNG/JPEG/JPG/GIF、大小 ≤1M、尺寸 ≤750px×1334px（尺寸需前端先压缩，后端不校验）；微信侧频率 2000 次/分钟、200000 次/天。access_token 失效(40001)自动重取并重试一次。⚠️ **HTTP 状态恒为 200，业务结果一律看 body 的 `code`**（本项目统一约定，见 §1）：前端必须判定 `body.code`（`202` 即违规），不能只看 HTTP 状态。**前端建议**：`code!=200` 或 `data.risky==true` 时禁止使用该图片；`CHECK_FAILED` 按业务策略拦截或提示重试。
 错误：`INVALID_SIGNATURE` `INVALID_ARGUMENT` `FILE_TOO_LARGE` `CONTENT_RISKY` `CHECK_FAILED`
 
 
