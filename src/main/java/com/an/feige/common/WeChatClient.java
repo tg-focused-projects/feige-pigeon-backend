@@ -30,6 +30,8 @@ public class WeChatClient {
     private static final String JSCODE2SESSION = "https://api.weixin.qq.com/sns/jscode2session";
     private static final String TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/token";
     private static final String SUBSCRIBE_SEND = "https://api.weixin.qq.com/cgi-bin/message/subscribe/send";
+    /** 图片内容安全（官方：POST multipart/form-data，字段名 media；格式 PNG/JPEG/JPG/GIF、≤1M）。 */
+    private static final String IMG_SEC_CHECK = "https://api.weixin.qq.com/wxa/img_sec_check";
     private static final int TIMEOUT = 10000;
 
     @Value("${feige.wechat.appid}")
@@ -162,6 +164,114 @@ public class WeChatClient {
     private static final long ACCESS_TOKEN_TTL_MS = 100 * 1000L;
     private volatile String cachedToken;
     private volatile long cachedAt;
+
+    /** 使缓存的 access_token 失效（微信返回 40001 时调用，强制下次重新获取）。 */
+    public void invalidateAccessToken() {
+        synchronized (this) {
+            cachedToken = null;
+            cachedAt = 0L;
+        }
+    }
+
+    /**
+     * 图片内容安全检查（微信 img_sec_check）。
+     *
+     * <p>官方调用：{@code POST /wxa/img_sec_check?access_token=..}，body 为 multipart/form-data，
+     * 文件字段名 {@code media}；图片格式 PNG/JPEG/JPG/GIF，大小 ≤1M，尺寸 ≤750x1334。
+     * 返回 {@code errcode}：0=内容正常、87014=含违法违规内容；40001=token 失效（自动重取并重试一次）。</p>
+     *
+     * @param imageBytes 图片字节（调用方已完成大小/格式校验）
+     * @param filename   原始文件名（用于推断 Content-Type 与 multipart filename）
+     * @return 微信响应 JSON；网络异常/未配置 appid 时返回 null
+     */
+    public JSONObject checkImageSec(byte[] imageBytes, String filename) {
+        if (imageBytes == null || imageBytes.length == 0) {
+            return null;
+        }
+        for (int attempt = 0; attempt < 2; attempt++) {
+            String token = accessToken();
+            if (StringUtils.isBlank(token)) {
+                log.warn("图片安全检查跳过：access_token 未获取到（appid/secret 未配置或微信不可达）");
+                return null;
+            }
+            try {
+                String boundary = "----FeigeBoundary" + DigestUtils.md5Hex(
+                        System.nanoTime() + "-" + filename);
+                byte[] body = buildMediaMultipart(boundary, filename, imageBytes);
+                String resp = httpPostMultipart(IMG_SEC_CHECK + "?access_token=" + token,
+                        "multipart/form-data; boundary=" + boundary, body);
+                JSONObject json = StringUtils.isBlank(resp) ? null : JSONObject.parseObject(resp);
+                if (json == null) {
+                    log.warn("图片安全检查无响应 filename={} size={}", filename, imageBytes.length);
+                    return null;
+                }
+                int errcode = json.getIntValue("errcode");
+                if (errcode == 40001 && attempt == 0) {
+                    // token 失效：作废缓存后重试一次
+                    log.info("图片安全检查 token 失效(40001)，重取 access_token 后重试");
+                    invalidateAccessToken();
+                    continue;
+                }
+                log.info("图片安全检查 filename={} size={} errcode={} errmsg={}",
+                        filename, imageBytes.length, errcode, json.getString("errmsg"));
+                return json;
+            } catch (Exception e) {
+                log.error("图片安全检查调用失败 filename={} size={}", filename, imageBytes.length, e);
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** 构造 img_sec_check 的 multipart/form-data 请求体（字段名固定 media）。 */
+    private byte[] buildMediaMultipart(String boundary, String filename, byte[] fileBytes) {
+        String safeName = StringUtils.defaultIfBlank(filename, "image.jpg");
+        String contentType = guessImageContentType(safeName);
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try {
+            bos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+            bos.write(("Content-Disposition: form-data; name=\"media\"; filename=\""
+                    + safeName + "\"\r\n").getBytes(StandardCharsets.UTF_8));
+            bos.write(("Content-Type: " + contentType + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+            bos.write(fileBytes);
+            bos.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            throw new IllegalStateException("构造图片上传请求体失败", e);
+        }
+        return bos.toByteArray();
+    }
+
+    /** 按扩展名推断图片 MIME（仅允许 png/jpg/jpeg/gif，调用方已校验后缀）。 */
+    private String guessImageContentType(String filename) {
+        String lower = filename.toLowerCase();
+        if (lower.endsWith(".png")) {
+            return "image/png";
+        }
+        if (lower.endsWith(".gif")) {
+            return "image/gif";
+        }
+        return "image/jpeg";
+    }
+
+    private String httpPostMultipart(String url, String contentType, byte[] body) throws Exception {
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setConnectTimeout(TIMEOUT);
+        conn.setReadTimeout(TIMEOUT);
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", contentType);
+        conn.setDoOutput(true);
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(body);
+            os.flush();
+        }
+        try {
+            int code = conn.getResponseCode();
+            InputStream in = code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream();
+            return readAll(in, code >= 200 && code < 300);
+        } finally {
+            conn.disconnect();
+        }
+    }
 
     private String httpGet(String url) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();

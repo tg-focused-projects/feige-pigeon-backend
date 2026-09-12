@@ -6,6 +6,11 @@ server:
 spring:
   application:
     name: feige-pigeon
+  servlet:
+    multipart:
+      # 图片内容审核上传（微信 img_sec_check 限 1M）：上限放宽到 2M，由业务侧校验后给出明确提示
+      max-file-size: 2MB
+      max-request-size: 3MB
   datasource:
     url: jdbc:mysql://127.0.0.1:3306/feige_pigeon?useUnicode=true&characterEncoding=utf-8&useSSL=false&allowMultiQueries=true&serverTimezone=Asia/Shanghai
     username: root
