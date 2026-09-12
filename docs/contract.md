@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V6.5 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V6.6 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V6.5**（2026-09-03，订阅消息跳转页改为 pages/flight/flight：信抵达 from=receive、回信抵达 +reply=1；含 V6.4 及以下全部）
+> 版本：**V6.6**（2026-09-12，新增图片内容审核 `POST /feige/check/img`（转发微信 img_sec_check）；含 V6.5 及以下全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://demo.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式；⚠️ `test.soogif.com` 指向生产 TKE 集群，切勿用于测试）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -221,6 +221,17 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 说明：七牛空间 `mgif`、目录 `feige/`（需求指定）；大小限制 1KB~100MB；`.mp4`/`.mov` 追加 `avthumb/mp4/vcodec/libx264` 转码（persistentPipeline=budong）；凭证有效期 1 小时。凭证 `FG_QINIU_ACCESS_KEY/FG_QINIU_SECRET_KEY` 未配置时返回 `QINIU_NOT_CONFIGURED`。
 错误：`QINIU_NOT_CONFIGURED`
 
+### `POST /feige/check/img` — 图片内容审核（**V6.6 新增**，multipart/form-data，需 `sign` 头）
+入参：`openid*`、`media*`（图片文件，multipart 字段名固定 `media`；需 `sign: md5(openid+FG_SIGN_SECRET)` 请求头）
+出参：
+- 内容正常：`{ code:200, msg:"success", data:{ risky:false, suggestion:"pass", errcode:0 } }`
+- 含违法违规内容：`{ code:202, msg:"内容含有违法违规内容", errorKey:"CONTENT_RISKY", data:{ risky:true, suggestion:"risky", errcode:87014 } }`
+- 参数/格式/大小不合法：`code:400`，`errorKey` = `INVALID_ARGUMENT`（缺文件/格式不支持）或 `FILE_TOO_LARGE`（>1M）
+- 签名非法：`code:401` `INVALID_SIGNATURE`
+- 审核服务异常（微信不可达/token 异常/未知错误码）：`code:500` `CHECK_FAILED`
+说明：转发微信 `img_sec_check`（服务端接口，需 access_token，前端无法直连）；后端不落盘、仅内存转发，图片由前端直接上传到本接口（**不经过七牛**）。限制：格式 PNG/JPEG/JPG/GIF、大小 ≤1M、尺寸 ≤750px×1334px（尺寸需前端先压缩，后端不校验）；微信侧频率 2000 次/分钟、200000 次/天。access_token 失效(40001)自动重取并重试一次。⚠️ **HTTP 状态恒为 200，业务结果一律看 body 的 `code`**（本项目统一约定，见 §1）：前端必须判定 `body.code`（`202` 即违规），不能只看 HTTP 状态。**前端建议**：`code!=200` 或 `data.risky==true` 时禁止使用该图片；`CHECK_FAILED` 按业务策略拦截或提示重试。
+错误：`INVALID_SIGNATURE` `INVALID_ARGUMENT` `FILE_TOO_LARGE` `CONTENT_RISKY` `CHECK_FAILED`
+
 
 **配置（V1.2/V5.1）**：`PAID_PIGEON_ENABLED`（规格15.6 开关，默认 false=免费创建兼容）、`FG_PAY_OFFER_ID`（虚拟支付 OfferID）、`FG_PAY_APP_KEY`（虚拟支付现网 AppKey；两者齐全=真实支付模式，缺失=fallback mock）、`FG_PAY_MOCK`（mock 支付，默认 true 仅测试）、`FG_PAY_QUERY_POLL_ENABLED`（查单兜底定时任务开关，默认 false）、`FG_MP_PUSH_TOKEN/FG_MP_PUSH_AES_KEY/FG_MP_PUSH_ENCRYPT_MODE`（虚拟支付发货推送接收配置：token 验 URL、EncodingAESKey 解密、兼容模式=1）。**槽位价格与微信道具 productId 自 V5.1 起配置在 `feige_pay_goods` 表**（slot_index 2~6 唯一；`product_id`=后台道具 ID、`price_fen`=分，两者须与微信「虚拟支付 → 道具管理」一致，否则下单报 -15013；**废弃** `FG_PIGEON_PRICES`/`FG_PAY_GOODS_IDS`）。
 
@@ -262,6 +273,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V6.6 | 2026-09-12 | **新增图片内容审核 `POST /feige/check/img`**（multipart，字段 `media`，需 sign）：服务端转发微信 `img_sec_check`（access_token + multipart media，返回 0/87014），响应 200 pass / 202 CONTENT_RISKY / 400 INVALID_ARGUMENT|FILE_TOO_LARGE / 401 INVALID_SIGNATURE / 500 CHECK_FAILED；图片 ≤1M、PNG/JPEG/JPG/GIF；token 40001 自动重取重试；后端不落盘。新增全局异常处理（multipart 超限→400 FILE_TOO_LARGE）；spring multipart 上限 2M |
 | V6.5 | 2026-09-03 | **订阅消息跳转页改为 pages/flight/flight**：信抵达通知跳 `pages/flight/flight?letterId=<信ID>&from=receive`；回信抵达通知跳 `pages/flight/flight?letterId=<回信ID>&from=receive&reply=1`（原 pages/feige/letter 无参） |
 | V6.4 | 2026-09-03 | **订阅消息昵称改用 feige_pigeon.name**：到达/回信到达推送文案（thing1/thing3/thing4 中的鸽子名）由 feige_letter.pigeon_name 快照改为按 pigeon_id 实时查 feige_pigeon.name（鸽子改名后推送同步新名；查不到回退快照→「信鸽」） |
 | V6.3 | 2026-09-03 | **letter/flight 顶层返参新增 pigeonRoleKey**：飞行页返回送信鸽子角色（按 pigeon_id 关联 feige_pigeon 查 role_key；历史信/无鸽子绑定为 null；FLYING_UNCLAIMED/已归巢/飞行中各状态分支均返回） |

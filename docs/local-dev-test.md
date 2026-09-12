@@ -231,6 +231,37 @@ EOF
 
 ---
 
+### 5.4 图片内容审核自测（V6.6 `POST /feige/check/img`）
+
+服务端转发微信 `img_sec_check`（需 access_token，故必须本地配真实小程序凭据：`FG_WECHAT_APPID/FG_WECHAT_SECRET`）。
+本地能直连 `api.weixin.qq.com` 即可真机验证（无需部署测试机）：
+
+```bash
+# 准备图片（PNG/JPEG/JPG/GIF，≤1M）
+python3 -c "
+import base64;open('/tmp/t.jpg','wb').write(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='))"
+# 登录取 openid+sign（见 §4）
+curl -s -X POST "$B/feige/check/img?openid=$OPENID" -H "sign: $SIGN" -F "media=@/tmp/t.jpg"
+```
+
+| 用例 | 期望结果 |
+|---|---|
+| 正常图片 | `code=200 data.risky=false suggestion=pass` |
+| **真实违规样本**（如敏感图） | `code=202 errorKey=CONTENT_RISKY data.risky=true errcode=87014` |
+| 缺 sign / 错 sign | `code=401 INVALID_SIGNATURE` |
+| 无文件 | `code=400 INVALID_ARGUMENT` |
+| >1M（如 1.5M） | `code=400 FILE_TOO_LARGE` |
+| >2M（multipart 上限） | `code=400 FILE_TOO_LARGE`（全局 advice） |
+| `.txt` 等非图片 | `code=400 INVALID_ARGUMENT` |
+
+> 注意：
+> 1) 响应 **HTTP 状态恒为 200**，业务结果看 body 的 `code`（项目统一约定）。
+> 2) `87014` 分支需要用**真实违规样本**验证（微信对随意字节/无意义图片返回 `0`，它做内容安全不做格式校验）。
+> 3) 微信侧限制：≤1M、PNG/JPEG/JPG/GIF、尺寸 ≤750×1334、2000 次/分钟。
+> 4) 独立交叉验证（不经我方代码）：`curl -F "media=@图.jpg" "https://api.weixin.qq.com/wxa/img_sec_check?access_token=$TOKEN"`。
+
+---
+
 ## 6. 通用信件链路冒烟（改动可能影响时）
 
 ```bash
