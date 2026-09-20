@@ -36,7 +36,7 @@
 
 ### 已决议事项（记录在案）
 
-- 内容安全审核：**后端提供**（2026-09-12 更新，废止原「后端不提供、前端直连」决议）：图片审核 `POST /feige/check/img` 转发微信 `img_sec_check`（契约 V6.6）；文本审核暂未提供，如需再行评估
+- 内容安全审核：**后端提供**（2026-09-12 更新，废止原「后端不提供、前端直连」决议）：图片审核 `POST /feige/check/img` 转发微信 `img_sec_check`（契约 V6.6）；文本审核 `POST /feige/check/text` 转发微信 `msg_sec_check` 2.0（契约 V6.7）
 - 等级/经验结算：**关闭**（只保留真实旅程数据累积）
 - 静默登录：维持 openid + sign 防伪方案（B8 决议）
 
@@ -224,6 +224,7 @@
 | 2026-09-03 | **订阅消息跳转页改为 pages/flight/flight（契约 V6.5，feature/subscribe-page-path）**：信抵达推送跳 `pages/flight/flight?letterId=<信ID>&from=receive`，回信抵达跳 `pages/flight/flight?letterId=<回信ID>&from=receive&reply=1`；本地自测通过（两场景 page 日志验证）；待测试机回归 |
 | 2026-09-03 | **订阅消息昵称改用 feige_pigeon.name（契约 V6.4，feature/subscribe-pigeon-name）**：到达/回信到达推送文案鸽子名由 letter 快照改为按 pigeon_id 实时查 feige_pigeon.name（改名后推送同步新名，查不到回退快照→信鸽）；本地自测通过（鸽子改名阿白→推送 thing1/thing3 用新名）；待测试机回归 |
 | 2026-09-12 | **新增图片内容审核接口（契约 V6.6，develop 08a7fd7）**：`POST /feige/check/img` 转发微信 `img_sec_check`（multipart 字段 media、需 sign；200 pass / 202 CONTENT_RISKY / 400 参数或超限 / 401 签名 / 500 服务异常；≤1M、PNG/JPEG/JPG/GIF；token 40001 自动重取重试；后端不落盘）；本地自测通过（含**真实违规样本**验证 87014→202）；决策更新：内容安全审核由「后端不提供」改为「后端提供（图片审核）」 |
+| 2026-09-20 | **新增文本内容审核接口（契约 V6.7，feature/msg-sec-check）**：`POST /feige/check/text` 转发微信 **`msg_sec_check` 2.0**（form：content/version=2/scene/openid/title?；需 sign；200 pass / 202 CONTENT_RISKY / 202 CONTENT_REVIEW / 400 INVALID_ARGUMENT|TEXT_TOO_LONG / 401 / 500 CHECK_FAILED；content ≤2500 字；token 40001 自动重试）；本地自测通过（mock 覆盖 pass/risky/review/87014/异常/边界 9 例 + 真微信验证请求参数与错误映射）；注意微信要求 openid 近两小时内访问过小程序 |
 
 ---
 

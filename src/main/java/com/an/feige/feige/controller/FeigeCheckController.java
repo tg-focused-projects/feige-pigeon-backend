@@ -46,6 +46,9 @@ public class FeigeCheckController {
     /** 微信图片审核大小上限：1M。 */
     private static final long MAX_IMAGE_BYTES = 1024 * 1024L;
 
+    /** 微信文本审核长度上限：2500 字（msg_sec_check 2.0）。 */
+    private static final int MAX_TEXT_LEN = 2500;
+
     @Resource
     private WeChatClient weChatClient;
 
@@ -103,6 +106,69 @@ public class FeigeCheckController {
             return map;
         }
         log.warn("图片审核返回未知错误码 errcode={} errmsg={}", errcode, resp.getString("errmsg"));
+        return err(500, "审核服务异常(errcode=" + errcode + ")", "CHECK_FAILED");
+    }
+
+    @ApiOperation("文本内容审核(微信 msg_sec_check 2.0)")
+    @PostMapping("/text")
+    @ResponseBody
+    public Map<String, Object> checkText(@RequestParam(name = "openid", required = false) String openid,
+                                         @RequestParam(name = "content", required = false) String content,
+                                         @RequestParam(name = "scene", required = false, defaultValue = "2") Integer scene,
+                                         @RequestParam(name = "title", required = false) String title,
+                                         HttpServletRequest request) {
+        if (!sign(request, openid)) {
+            return err(401, "非法请求", "INVALID_SIGNATURE");
+        }
+        if (StringUtils.isBlank(content)) {
+            return err(400, "请提供要检测的文本(content)", "INVALID_ARGUMENT");
+        }
+        if (content.length() > MAX_TEXT_LEN) {
+            return err(400, "文本不能超过 " + MAX_TEXT_LEN + " 字", "TEXT_TOO_LONG");
+        }
+        if (scene == null || scene < 1 || scene > 4) {
+            return err(400, "scene 取值 1~4(1资料/2评论/3论坛/4社交日志)", "INVALID_ARGUMENT");
+        }
+
+        JSONObject resp = weChatClient.checkTextSec(openid, content, scene, title, null, null);
+        if (resp == null) {
+            return err(500, "审核服务暂时不可用，请稍后重试", "CHECK_FAILED");
+        }
+        int errcode = resp.getIntValue("errcode");
+        JSONObject result = resp.getJSONObject("result");
+        String suggest = result == null ? null : result.getString("suggest");
+        Integer label = result == null ? null : result.getInteger("label");
+
+        if (errcode == 0 && ("risky".equals(suggest) || "review".equals(suggest))) {
+            boolean review = "review".equals(suggest);
+            Map<String, Object> data = new HashMap<>();
+            data.put("risky", true);
+            data.put("suggestion", review ? "review" : "risky");
+            data.put("label", label);
+            Map<String, Object> map = err(202, review ? "内容需人工复核" : "内容含有违法违规内容",
+                    review ? "CONTENT_REVIEW" : "CONTENT_RISKY");
+            map.put("data", data);
+            return map;
+        }
+        if (errcode == 0 && "pass".equals(suggest)) {
+            Map<String, Object> data = new HashMap<>();
+            data.put("risky", false);
+            data.put("suggestion", "pass");
+            data.put("label", label);
+            return ok(data);
+        }
+        // 旧版兼容：errcode=87014（1.0 语义）
+        if (errcode == 87014) {
+            Map<String, Object> data = new HashMap<>();
+            data.put("risky", true);
+            data.put("suggestion", "risky");
+            data.put("label", label);
+            Map<String, Object> map = err(202, "内容含有违法违规内容", "CONTENT_RISKY");
+            map.put("data", data);
+            return map;
+        }
+        // 其它：errcode != 0（如 openid 非本人/近两小时未访问小程序、appid 不匹配）或 suggest 缺失
+        log.warn("文本审核返回异常 errcode={} errmsg={} openid={}", errcode, resp.getString("errmsg"), openid);
         return err(500, "审核服务异常(errcode=" + errcode + ")", "CHECK_FAILED");
     }
 
