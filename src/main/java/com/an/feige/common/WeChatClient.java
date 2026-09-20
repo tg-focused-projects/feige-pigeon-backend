@@ -32,6 +32,8 @@ public class WeChatClient {
     private static final String SUBSCRIBE_SEND = "https://api.weixin.qq.com/cgi-bin/message/subscribe/send";
     /** 图片内容安全（官方：POST multipart/form-data，字段名 media；格式 PNG/JPEG/JPG/GIF、≤1M）。 */
     private static final String IMG_SEC_CHECK = "https://api.weixin.qq.com/wxa/img_sec_check";
+    /** 文本内容安全 msg_sec_check（2.0：content/version=2/scene/openid，返回 result.suggest）。 */
+    private static final String MSG_SEC_CHECK = "https://api.weixin.qq.com/wxa/msg_sec_check";
     private static final int TIMEOUT = 10000;
 
     @Value("${feige.wechat.appid}")
@@ -217,6 +219,76 @@ public class WeChatClient {
                 return json;
             } catch (Exception e) {
                 log.error("图片安全检查调用失败 filename={} size={}", filename, imageBytes.length, e);
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 文本内容安全检查（微信 msg_sec_check 2.0）。
+     *
+     * <p>官方要求：{@code content} ≤2500 字；{@code version} 固定 2；
+     * {@code scene} ∈ {1 资料, 2 评论, 3 论坛, 4 社交日志}；
+     * {@code openid} 必须是**近两小时内访问过小程序**的用户。
+     * 返回 {@code result.suggest}：pass/risky/review（结论看它），另含 {@code result.label} 标签枚举。
+     * access_token 失效(40001) 自动重取并重试一次。</p>
+     *
+     * @return 微信响应 JSON；网络异常/未配置 appid 时返回 null
+     */
+    public JSONObject checkTextSec(String openid, String content, int scene) {
+        return checkTextSec(openid, content, scene, null, null, null);
+    }
+
+    /** 文本内容安全检查（可附带 title/nickname/signature 辅助判定；signature 仅 scene=1 有效）。 */
+    public JSONObject checkTextSec(String openid, String content, int scene,
+                                   String title, String nickname, String signature) {
+        if (StringUtils.isBlank(content)) {
+            return null;
+        }
+        for (int attempt = 0; attempt < 2; attempt++) {
+            String token = accessToken();
+            if (StringUtils.isBlank(token)) {
+                log.warn("文本安全检查跳过：access_token 未获取到（appid/secret 未配置或微信不可达）");
+                return null;
+            }
+            try {
+                java.util.LinkedHashMap<String, Object> body = new java.util.LinkedHashMap<>();
+                body.put("content", content);
+                body.put("version", 2);
+                body.put("scene", scene);
+                body.put("openid", openid);
+                if (StringUtils.isNotBlank(title)) {
+                    body.put("title", title);
+                }
+                if (StringUtils.isNotBlank(nickname)) {
+                    body.put("nickname", nickname);
+                }
+                if (StringUtils.isNotBlank(signature)) {
+                    body.put("signature", signature);
+                }
+                String resp = httpPostJson(MSG_SEC_CHECK + "?access_token=" + token,
+                        JSONObject.toJSONString(body));
+                JSONObject json = StringUtils.isBlank(resp) ? null : JSONObject.parseObject(resp);
+                if (json == null) {
+                    log.warn("文本安全检查无响应 len={} scene={}", content.length(), scene);
+                    return null;
+                }
+                int errcode = json.getIntValue("errcode");
+                if (errcode == 40001 && attempt == 0) {
+                    log.info("文本安全检查 token 失效(40001)，重取 access_token 后重试");
+                    invalidateAccessToken();
+                    continue;
+                }
+                JSONObject result = json.getJSONObject("result");
+                log.info("文本安全检查 scene={} len={} errcode={} suggest={} label={} errmsg={}",
+                        scene, content.length(), errcode,
+                        result == null ? null : result.getString("suggest"),
+                        result == null ? null : result.getInteger("label"),
+                        json.getString("errmsg"));
+                return json;
+            } catch (Exception e) {
+                log.error("文本安全检查调用失败 len={} scene={}", content.length(), scene, e);
                 return null;
             }
         }

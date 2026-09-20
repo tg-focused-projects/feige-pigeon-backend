@@ -1,7 +1,7 @@
-# 《飞鸽传书》独立后端 接口契约（V6.6 · 当前基线）
+# 《飞鸽传书》独立后端 接口契约（V6.7 · 当前基线）
 
 > 项目：`feige-pigeon`（SpringBoot 2.3.12 / JDK8；独立部署）
-> 版本：**V6.6**（2026-09-12，新增图片内容审核 `POST /feige/check/img`（转发微信 img_sec_check）；含 V6.5 及以下全部）
+> 版本：**V6.7**（2026-09-20，新增文本内容审核 `POST /feige/check/text`（转发微信 msg_sec_check 2.0）；含 V6.6 及以下全部）
 > 基础地址：本地 `http://localhost:8098`；**测试环境 `http://demo.soogif.com`**（= `110.40.183.197:8098`；`FG_DEV_LOGIN` 控制 dev/正式模式；⚠️ `test.soogif.com` 指向生产 TKE 集群，切勿用于测试）
 > 模块：`com.an.feige`（feige 飞鸽 + user 登录/注册 + common）
 > 建库：`src/main/resources/sql/feige_schema.sql`（新库 `feige_pigeon`；存量库升级见文件尾部 ALTER）
@@ -232,6 +232,17 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 说明：转发微信 `img_sec_check`（服务端接口，需 access_token，前端无法直连）；后端不落盘、仅内存转发，图片由前端直接上传到本接口（**不经过七牛**）。限制：格式 PNG/JPEG/JPG/GIF、大小 ≤1M、尺寸 ≤750px×1334px（尺寸需前端先压缩，后端不校验）；微信侧频率 2000 次/分钟、200000 次/天。access_token 失效(40001)自动重取并重试一次。⚠️ **HTTP 状态恒为 200，业务结果一律看 body 的 `code`**（本项目统一约定，见 §1）：前端必须判定 `body.code`（`202` 即违规），不能只看 HTTP 状态。**前端建议**：`code!=200` 或 `data.risky==true` 时禁止使用该图片；`CHECK_FAILED` 按业务策略拦截或提示重试。
 错误：`INVALID_SIGNATURE` `INVALID_ARGUMENT` `FILE_TOO_LARGE` `CONTENT_RISKY` `CHECK_FAILED`
 
+### `POST /feige/check/text` — 文本内容审核（**V6.7 新增**，form，需 `sign` 头）
+入参：`openid*`、`content*`（待检测文本，≤2500 字）、`scene?`（默认 `2`；`1` 资料 / `2` 评论 / `3` 论坛 / `4` 社交日志）、`title?`（可选，文本标题）、请求头 `sign: md5(openid+FG_SIGN_SECRET)`
+出参：
+- 内容正常：`{ code:200, msg:"success", data:{ risky:false, suggestion:"pass", label:100 } }`
+- 含违法违规内容：`{ code:202, msg:"内容含有违法违规内容", errorKey:"CONTENT_RISKY", data:{ risky:true, suggestion:"risky", label:20002 } }`
+- 需人工复核：`{ code:202, msg:"内容需人工复核", errorKey:"CONTENT_REVIEW", data:{ risky:true, suggestion:"review", label:21000 } }`
+- 参数不合法：`code:400`（缺 content=`INVALID_ARGUMENT`；超长=`TEXT_TOO_LONG`；scene 非 1~4=`INVALID_ARGUMENT`）
+- 签名非法：`code:401` `INVALID_SIGNATURE`；审核服务异常：`code:500` `CHECK_FAILED`
+说明：转发微信 **`msg_sec_check` 2.0**（服务端接口，需 access_token，前端无法直连）；请求体 `{content, version:2, scene, openid, title?}`。`label` 为微信命中标签（`100` 正常；`10001` 广告；`20001` 时政；`20002` 色情；`20003` 辱骂；`20006` 违法犯罪；`20008` 欺诈；`20012` 低俗；`20013` 版权；`21000` 其他）。⚠️ **微信要求 `openid` 必须是近两小时内访问过小程序的用户**，否则返回 `errcode=40003/…`（表现为 `CHECK_FAILED`）——前端需在用户本次登录后调用，不要用陈旧 openid。微信侧频率 4000 次/分钟、200000 次/天（未上架小程序 100 次/天）。access_token 失效(40001)自动重取并重试一次。**前端建议**：`code!=200` 或 `data.risky==true` 时禁止发送该内容；`review` 可按业务人工复核。
+错误：`INVALID_SIGNATURE` `INVALID_ARGUMENT` `TEXT_TOO_LONG` `CONTENT_RISKY` `CONTENT_REVIEW` `CHECK_FAILED`
+
 
 **配置（V1.2/V5.1）**：`PAID_PIGEON_ENABLED`（规格15.6 开关，默认 false=免费创建兼容）、`FG_PAY_OFFER_ID`（虚拟支付 OfferID）、`FG_PAY_APP_KEY`（虚拟支付现网 AppKey；两者齐全=真实支付模式，缺失=fallback mock）、`FG_PAY_MOCK`（mock 支付，默认 true 仅测试）、`FG_PAY_QUERY_POLL_ENABLED`（查单兜底定时任务开关，默认 false）、`FG_MP_PUSH_TOKEN/FG_MP_PUSH_AES_KEY/FG_MP_PUSH_ENCRYPT_MODE`（虚拟支付发货推送接收配置：token 验 URL、EncodingAESKey 解密、兼容模式=1）。**槽位价格与微信道具 productId 自 V5.1 起配置在 `feige_pay_goods` 表**（slot_index 2~6 唯一；`product_id`=后台道具 ID、`price_fen`=分，两者须与微信「虚拟支付 → 道具管理」一致，否则下单报 -15013；**废弃** `FG_PIGEON_PRICES`/`FG_PAY_GOODS_IDS`）。
 
@@ -273,6 +284,7 @@ reply(原信DELIVERED, 收件人) ─> IN_FLIGHT(直达, 预绑定原发件人, 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V6.7 | 2026-09-20 | **新增文本内容审核 `POST /feige/check/text`**（form，需 sign）：服务端转发微信 **`msg_sec_check` 2.0**（`{content, version:2, scene, openid, title?}`，返回 `result.suggest`=pass/risky/review + `label`）；响应 200 pass / 202 CONTENT_RISKY / 202 CONTENT_REVIEW / 400 INVALID_ARGUMENT|TEXT_TOO_LONG / 401 INVALID_SIGNATURE / 500 CHECK_FAILED；content ≤2500 字；token 40001 自动重取重试；微信要求 openid 近两小时内访问过小程序 |
 | V6.6 | 2026-09-12 | **新增图片内容审核 `POST /feige/check/img`**（multipart，字段 `media`，需 sign）：服务端转发微信 `img_sec_check`（access_token + multipart media，返回 0/87014），响应 200 pass / 202 CONTENT_RISKY / 400 INVALID_ARGUMENT|FILE_TOO_LARGE / 401 INVALID_SIGNATURE / 500 CHECK_FAILED；图片 ≤1M、PNG/JPEG/JPG/GIF；token 40001 自动重取重试；后端不落盘。新增全局异常处理（multipart 超限→400 FILE_TOO_LARGE）；spring multipart 上限 2M |
 | V6.5 | 2026-09-03 | **订阅消息跳转页改为 pages/flight/flight**：信抵达通知跳 `pages/flight/flight?letterId=<信ID>&from=receive`；回信抵达通知跳 `pages/flight/flight?letterId=<回信ID>&from=receive&reply=1`（原 pages/feige/letter 无参） |
 | V6.4 | 2026-09-03 | **订阅消息昵称改用 feige_pigeon.name**：到达/回信到达推送文案（thing1/thing3/thing4 中的鸽子名）由 feige_letter.pigeon_name 快照改为按 pigeon_id 实时查 feige_pigeon.name（鸽子改名后推送同步新名；查不到回退快照→「信鸽」） |
